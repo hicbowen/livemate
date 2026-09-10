@@ -16,7 +16,7 @@ import {
 	AppTextBox,
 } from 'react-desktop-shell'
 import 'react-desktop-shell/style.css'
-import Window from '@wailsio/runtime'
+import { Window } from '@wailsio/runtime'
 
 import type {
   Anchor,
