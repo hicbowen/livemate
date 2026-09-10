@@ -108,6 +108,10 @@ export function GetAnchorTrend(anchorID: number, days: number): $CancellableProm
     return $Call.ByID(2236511423, anchorID, days);
 }
 
+export function GetAnchorTrendRange(anchorID: number, startDate: string, endDate: string): $CancellablePromise<domain$0.TrendPoint[] | null> {
+    return $Call.ByID(923967156, anchorID, startDate, endDate);
+}
+
 export function GetDashboard(staleDays: number): $CancellablePromise<domain$0.Dashboard> {
     return $Call.ByID(1105502559, staleDays);
 }
@@ -172,6 +176,10 @@ export function ListReviews(anchorID: number): $CancellablePromise<domain$0.Oper
     return $Call.ByID(2673098964, anchorID);
 }
 
+export function ListSessionPage(filter: domain$0.SessionFilter): $CancellablePromise<domain$0.SessionPage> {
+    return $Call.ByID(3396702498, filter);
+}
+
 export function ListSessions(anchorID: number): $CancellablePromise<domain$0.LiveSession[] | null> {
     return $Call.ByID(3272772086, anchorID);
 }
@@ -182,6 +190,14 @@ export function ListTagNames(): $CancellablePromise<string[] | null> {
 
 export function LogDirectory(): $CancellablePromise<string> {
     return $Call.ByID(3361204886);
+}
+
+export function OpenDataDirectory(): $CancellablePromise<void> {
+    return $Call.ByID(3525871706);
+}
+
+export function OpenLogDirectory(): $CancellablePromise<void> {
+    return $Call.ByID(2975398258);
 }
 
 export function Search(query: string): $CancellablePromise<domain$0.SearchResult[] | null> {

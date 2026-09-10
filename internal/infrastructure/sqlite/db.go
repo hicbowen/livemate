@@ -255,6 +255,9 @@ func floatValue(value *float64) any {
 }
 
 func (s *Store) ExportBackup(appVersion string) (domain.BackupExport, error) {
+	if s.logger != nil {
+		s.logger.Printf("导出备份开始")
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	db, err := s.dbLocked()
@@ -285,10 +288,16 @@ func (s *Store) ExportBackup(appVersion string) (domain.BackupExport, error) {
 	if err := os.WriteFile(path, archive, 0o600); err != nil {
 		return domain.BackupExport{}, fmt.Errorf("备份失败：写入压缩包失败：%w", err)
 	}
+	if s.logger != nil {
+		s.logger.Printf("导出备份完成 path=%s", path)
+	}
 	return domain.BackupExport{FileName: fileName, Path: path, ArchiveBase64: base64.StdEncoding.EncodeToString(archive), ExportedAt: manifest.ExportedAt}, nil
 }
 
 func (s *Store) ImportBackup(archiveBase64, appVersion string) error {
+	if s.logger != nil {
+		s.logger.Printf("导入备份开始")
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	archive, err := base64.StdEncoding.DecodeString(archiveBase64)
@@ -399,6 +408,9 @@ func (s *Store) ImportBackup(archiveBase64, appVersion string) error {
 		return fmt.Errorf("导入失败：打开替换后的数据库失败：%w", err)
 	}
 	_ = os.Remove(oldPath)
+	if s.logger != nil {
+		s.logger.Printf("导入备份完成")
+	}
 	return nil
 }
 

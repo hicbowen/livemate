@@ -22,6 +22,7 @@ import type {
   AnchorInput,
   AnchorListItem,
   Dashboard,
+  SearchResult,
 } from '../bindings/github.com/hicbowen/livemate/internal/domain/models.js'
 import { arrayOrEmpty, errorMessage, formatDate, formatMetric, formatYuan, optionalInteger, Service } from './api'
 import { useAppStore, type AppView } from './store'
@@ -102,7 +103,7 @@ function DashboardPage({ onOpenAnchor }: { onOpenAnchor: (id: number) => void })
     <section className="stat-grid" aria-label="今日概览">
       <StatBlock label="主播总数" value={String(data.anchor_count)} hint={`${data.today_not_live_anchor_count} 位今天未开播`} accent />
       <StatBlock label="今天已开播" value={String(data.today_live_anchor_count)} hint="按主播去重" />
-      <StatBlock label="今日直播时长" value={`${formatMetric(data.today_duration_minutes / 60, 1)} 小时`} hint={`${data.today_duration_minutes} 分钟`} />
+      <StatBlock label="今日直播时长" value={`${formatMetric(data.today_duration_minutes === null ? null : data.today_duration_minutes / 60, 1)} 小时`} hint={`${formatMetric(data.today_duration_minutes, 0)} 分钟`} />
       <StatBlock label="今日流水" value={formatYuan(data.today_revenue_cents)} hint="保存为整数分" />
       <StatBlock label="今日新增粉丝" value={formatMetric(data.today_followers_gained, 0)} hint="未知值不会被当成 0" />
     </section>
@@ -206,6 +207,26 @@ function AnchorsPage({ onOpenAnchor }: { onOpenAnchor: (id: number) => void }) {
   </AppPage>
 }
 
+function GlobalSearch({ onOpenAnchor }: { onOpenAnchor: (id: number) => void }) {
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<SearchResult[]>([])
+  const [open, setOpen] = useState(false)
+  const [loading, setLoading] = useState(false)
+  useEffect(() => {
+    const trimmed = query.trim()
+    if (!trimmed) { setResults([]); setLoading(false); return }
+    let alive = true
+    const timer = window.setTimeout(() => {
+      setLoading(true)
+      Service.Search(trimmed).then((items) => { if (alive) setResults(arrayOrEmpty(items)) }).catch(() => { if (alive) setResults([]) }).finally(() => { if (alive) setLoading(false) })
+    }, 220)
+    return () => { alive = false; window.clearTimeout(timer) }
+  }, [query])
+  const resultKind = (kind: string) => kind === 'anchor' ? '主播' : kind === 'issue' ? '问题' : '方案'
+  const openResult = (result: SearchResult) => { onOpenAnchor(result.kind === 'anchor' ? result.id : result.anchor_id); setOpen(false) }
+  return <div className="global-search-wrap"><AppSearchBox value={query} onValueChange={(value) => { setQuery(value); setOpen(true) }} onFocus={() => setOpen(true)} placeholder="全局搜索主播、问题、方案…" className="global-search" />{open && query.trim() && <div className="global-search-results">{loading ? <div className="search-state">正在搜索…</div> : results.length === 0 ? <div className="search-state">没有找到匹配内容</div> : results.map((result) => <button key={`${result.kind}-${result.id}`} onClick={() => openResult(result)}><span className="search-kind">{resultKind(result.kind)}</span><span className="row-main"><strong>{result.title || result.anchor_nickname}</strong><small>{result.kind === 'anchor' ? result.subtitle : `${result.anchor_nickname} · ${result.subtitle}`}</small></span><span className="row-arrow">›</span></button>)}</div>}</div>
+}
+
 function App() {
   const view = useAppStore((state) => state.view)
   const setView = useAppStore((state) => state.setView)
@@ -217,7 +238,7 @@ function App() {
   const backToAnchors = () => { selectAnchor(null); setView('anchors') }
   const activeView: AppView = view === 'anchor-detail' ? 'anchors' : view
 
-  return <AppShell theme="system" themePreset="teal" title="播伴" icon={<span className="app-logo">伴</span>} sidebar={{ displayMode: 'auto', collapsible: true }} sidebarHeader={<div className="sidebar-brand"><span className="app-logo">伴</span><span><strong>播伴</strong><small>主播运营管理</small></span></div>} rail={<AppRail value={activeView} onValueChange={(value) => { if (value === 'dashboard' || value === 'anchors' || value === 'settings') setView(value) }} items={[{ key: 'dashboard', label: '运营首页', icon: <Icon>⌂</Icon> }, { key: 'anchors', label: '主播档案', icon: <Icon>◎</Icon> }, { type: 'group', label: '工作闭环' }, { key: 'reviews', label: '复盘与问题', icon: <Icon>≡</Icon>, disabled: true }, { key: 'plans', label: '改进方案', icon: <Icon>↗</Icon>, disabled: true }]} footerItems={[{ key: 'settings', label: '设置', icon: <Icon>⚙</Icon> }]} />}>{view === 'dashboard' && <DashboardPage onOpenAnchor={openAnchor} />}{view === 'anchors' && <AnchorsPage onOpenAnchor={openAnchor} />}{view === 'anchor-detail' && selectedAnchorId && <AnchorDetailPage anchorId={selectedAnchorId} refreshKey={refresh} onBack={backToAnchors} />}{view === 'settings' && <SettingsPage />}</AppShell>
+  return <AppShell theme="system" themePreset="teal" title="播伴" icon={<span className="app-logo">伴</span>} sidebar={{ displayMode: 'auto', collapsible: true }} sidebarHeader={<div className="sidebar-brand"><span className="app-logo">伴</span><span><strong>播伴</strong><small>主播运营管理</small></span></div>} rail={<AppRail value={activeView} onValueChange={(value) => { if (value === 'dashboard' || value === 'anchors' || value === 'settings') setView(value) }} items={[{ key: 'dashboard', label: '运营首页', icon: <Icon>⌂</Icon> }, { key: 'anchors', label: '主播档案', icon: <Icon>◎</Icon> }, { type: 'group', label: '工作闭环' }, { key: 'reviews', label: '复盘与问题', icon: <Icon>≡</Icon>, disabled: true }, { key: 'plans', label: '改进方案', icon: <Icon>↗</Icon>, disabled: true }]} footerItems={[{ key: 'settings', label: '设置', icon: <Icon>⚙</Icon> }]} />}><div className="app-content-stack"><GlobalSearch onOpenAnchor={openAnchor} />{view === 'dashboard' && <DashboardPage onOpenAnchor={openAnchor} />}{view === 'anchors' && <AnchorsPage onOpenAnchor={openAnchor} />}{view === 'anchor-detail' && selectedAnchorId && <AnchorDetailPage anchorId={selectedAnchorId} refreshKey={refresh} onBack={backToAnchors} />}{view === 'settings' && <SettingsPage />}</div></AppShell>
 }
 
 export default App

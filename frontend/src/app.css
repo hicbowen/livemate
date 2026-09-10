@@ -34,6 +34,15 @@ button { cursor: pointer; }
 .sidebar-brand strong { font-size: 14px; line-height: 1; }
 .sidebar-brand small { color: #71808d; font-size: 11px; }
 .rail-icon { display: inline-flex; width: 18px; justify-content: center; color: currentColor; font-size: 18px; line-height: 1; }
+.app-content-stack { position: relative; min-height: 100%; }
+.global-search-wrap { position: relative; z-index: 20; display: flex; justify-content: flex-end; padding: 12px 24px 0; }
+.global-search { width: min(420px, 100%); }
+.global-search-results { position: absolute; top: 50px; right: 24px; width: min(420px, calc(100% - 48px)); overflow: hidden; border: 1px solid #dfe7eb; border-radius: 5px; background: #fff; box-shadow: 0 10px 24px rgba(29, 54, 67, .12); }
+.global-search-results button { display: flex; align-items: center; gap: 9px; width: 100%; padding: 10px 12px; border: 0; border-bottom: 1px solid #edf1f4; background: #fff; color: inherit; text-align: left; }
+.global-search-results button:hover { background: #f6fbfa; }
+.global-search-results button:last-child { border-bottom: 0; }
+.search-kind { flex: 0 0 32px; color: #0f766e; font-size: 11px; }
+.search-state { padding: 14px; color: #85929d; font-size: 12px; text-align: center; }
 
 .stat-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 24px; }
 .stat-block { min-height: 100px; padding: 15px 16px; border: 1px solid #e1e7ed; border-radius: 6px; background: #fff; display: grid; align-content: center; gap: 5px; }
@@ -67,6 +76,8 @@ button { cursor: pointer; }
 .priority-mark[data-priority="紧急"] { background: #c84c4c; }
 .plan-mark { color: #0f766e; font-weight: 700; }
 .metric-inline { color: #0f766e; font-size: 12px; white-space: nowrap; }
+.metric-positive { color: #287148; }
+.metric-negative { color: #a13e3e; }
 .warning-icon { display: inline-flex; align-items: center; justify-content: center; width: 21px; height: 21px; border-radius: 50%; background: #fff0cf; color: #a15c00; font-size: 12px; font-weight: 700; }
 .goal-strip { display: flex; flex-wrap: wrap; gap: 8px; }
 .goal-chip { display: grid; gap: 4px; min-width: 220px; padding: 10px 12px; border: 1px solid #eadfcf; border-radius: 5px; background: #fffaf1; color: inherit; text-align: left; }
@@ -138,6 +149,22 @@ button { cursor: pointer; }
 .summary-list button b { color: #9ba8b3; font-size: 18px; font-weight: 400; }
 .trend-table td { text-align: right; }
 .trend-table td:first-child, .trend-table th:first-child { text-align: left; }
+.trend-controls { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.range-buttons { display: inline-flex; border: 1px solid #ccd7dd; border-radius: 4px; overflow: hidden; }
+.range-buttons button { padding: 6px 9px; border: 0; border-right: 1px solid #ccd7dd; background: #fff; color: #71808d; font-size: 11px; }
+.range-buttons button:last-child { border-right: 0; }
+.range-buttons button.is-active { background: #e8f4f2; color: #0f766e; font-weight: 650; }
+.date-range { display: inline-flex; align-items: center; gap: 5px; color: #85929d; font-size: 11px; }
+.date-range .rds-text-box, .date-range input { width: 126px; }
+.trend-chart { margin-bottom: 12px; padding: 11px 13px 8px; border: 1px solid #e5ecee; border-radius: 5px; background: #fbfdfd; }
+.trend-chart-label { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 5px; }
+.trend-chart-label span { color: #40505e; font-size: 12px; font-weight: 650; }
+.trend-chart-label small { color: #85929d; font-size: 11px; }
+.trend-chart svg { display: block; width: 100%; height: 130px; overflow: visible; }
+.chart-axis { stroke: #dfe7eb; stroke-width: 1; }
+.chart-line { stroke: #0f766e; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.chart-point { fill: #fff; stroke: #0f766e; stroke-width: 2; }
+.trend-chart-range { display: flex; justify-content: space-between; color: #9ba8b3; font-size: 10px; }
 
 .session-row, .review-row, .issue-row, .goal-row { padding: 14px; }
 .session-row-header, .review-row-header, .issue-row-header, .goal-row-header, .plan-card-header, .plan-panel-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }

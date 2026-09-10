@@ -101,6 +101,20 @@ type AnchorPage struct {
 	Items []AnchorListItem `json:"items"`
 }
 
+// SessionFilter keeps potentially large session history paged at the
+// application boundary. The anchor detail response only carries the recent
+// window needed for its overview.
+type SessionFilter struct {
+	AnchorID int64 `json:"anchor_id"`
+	Page     int   `json:"page"`
+	PageSize int   `json:"page_size"`
+}
+
+type SessionPage struct {
+	Page  PageInfo      `json:"page"`
+	Items []LiveSession `json:"items"`
+}
+
 type AnchorListItem struct {
 	Anchor
 	LastSessionDate      *string `json:"last_session_date"`
@@ -444,9 +458,9 @@ type Dashboard struct {
 	AnchorCount             int            `json:"anchor_count"`
 	TodayLiveAnchorCount    int            `json:"today_live_anchor_count"`
 	TodayNotLiveAnchorCount int            `json:"today_not_live_anchor_count"`
-	TodayDurationMinutes    int            `json:"today_duration_minutes"`
-	TodayRevenueCents       int64          `json:"today_revenue_cents"`
-	TodayFollowersGained    int64          `json:"today_followers_gained"`
+	TodayDurationMinutes    *int           `json:"today_duration_minutes"`
+	TodayRevenueCents       *int64         `json:"today_revenue_cents"`
+	TodayFollowersGained    *int64         `json:"today_followers_gained"`
 	FocusAnchors            []FocusAnchor  `json:"focus_anchors"`
 	PendingIssues           []IssueSummary `json:"pending_issues"`
 	ActivePlans             []PlanSummary  `json:"active_plans"`

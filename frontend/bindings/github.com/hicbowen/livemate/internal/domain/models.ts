@@ -175,9 +175,9 @@ export interface Dashboard {
     "anchor_count": number;
     "today_live_anchor_count": number;
     "today_not_live_anchor_count": number;
-    "today_duration_minutes": number;
-    "today_revenue_cents": number;
-    "today_followers_gained": number;
+    "today_duration_minutes": number | null;
+    "today_revenue_cents": number | null;
+    "today_followers_gained": number | null;
     "focus_anchors": FocusAnchor[] | null;
     "pending_issues": IssueSummary[] | null;
     "active_plans": PlanSummary[] | null;
@@ -423,6 +423,17 @@ export interface SearchResult {
     "subtitle": string;
 }
 
+/**
+ * SessionFilter keeps potentially large session history paged at the
+ * application boundary. The anchor detail response only carries the recent
+ * window needed for its overview.
+ */
+export interface SessionFilter {
+    "anchor_id": number;
+    "page": number;
+    "page_size": number;
+}
+
 export interface SessionMetrics {
     "revenue_per_hour": number | null;
     "followers_per_hour": number | null;
@@ -430,6 +441,11 @@ export interface SessionMetrics {
     "payer_rate": number | null;
     "comment_user_rate": number | null;
     "pk_win_rate": number | null;
+}
+
+export interface SessionPage {
+    "page": PageInfo;
+    "items": LiveSession[] | null;
 }
 
 export interface StageGoal {

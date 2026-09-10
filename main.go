@@ -7,6 +7,7 @@ import (
 	appservice "github.com/hicbowen/livemate/internal/application"
 	"github.com/hicbowen/livemate/internal/bridge/wails"
 	"github.com/hicbowen/livemate/internal/config"
+	"github.com/hicbowen/livemate/internal/domain"
 	"github.com/hicbowen/livemate/internal/infrastructure/sqlite"
 	"github.com/hicbowen/livemate/internal/platform"
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -27,7 +28,7 @@ func main() {
 		log.Fatalf("播伴日志初始化失败：%v", err)
 	}
 	defer logger.Close()
-	logger.Printf("应用启动 version=%s data_dir=%s", "1.0.0", paths.DataDir)
+	logger.Printf("应用启动 version=%s data_dir=%s", domain.AppVersion, paths.DataDir)
 
 	store, err := sqlite.Open(paths, logger)
 	if err != nil {
@@ -38,8 +39,8 @@ func main() {
 
 	service := appservice.NewService(store)
 	app := application.New(application.Options{
-		Name:        "播伴",
-		Description: "主播运营管理与 AI 辅助工具",
+		Name:        domain.ProductName,
+		Description: domain.ProductDescription,
 		Services: []application.Service{
 			application.NewService(wails.NewService(service)),
 		},
@@ -52,7 +53,7 @@ func main() {
 	})
 
 	app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title:  "播伴",
+		Title:  domain.ProductName,
 		Width:  1280,
 		Height: 800,
 		Mac: application.MacWindow{

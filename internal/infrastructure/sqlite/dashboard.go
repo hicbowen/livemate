@@ -61,6 +61,30 @@ func (s *Store) GetAnchorTrend(anchorID int64, days int) ([]domain.TrendPoint, e
 	return anchorTrendDB(db, anchorID, days)
 }
 
+func (s *Store) GetAnchorTrendRange(anchorID int64, startDate, endDate string) ([]domain.TrendPoint, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if anchorID <= 0 {
+		return nil, fmt.Errorf("主播 ID 无效")
+	}
+	startDate = normalizeDate(startDate)
+	endDate = normalizeDate(endDate)
+	if err := validateDate(startDate, "趋势开始日期"); err != nil {
+		return nil, err
+	}
+	if err := validateDate(endDate, "趋势结束日期"); err != nil {
+		return nil, err
+	}
+	if startDate > endDate {
+		return nil, fmt.Errorf("趋势开始日期不能晚于结束日期")
+	}
+	db, err := s.dbLocked()
+	if err != nil {
+		return nil, err
+	}
+	return anchorTrendRangeDB(db, anchorID, startDate, endDate)
+}
+
 func (s *Store) GetDashboard(staleDays int) (domain.Dashboard, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -88,13 +112,16 @@ func (s *Store) GetDashboard(staleDays int) (domain.Dashboard, error) {
 		return domain.Dashboard{}, err
 	}
 	if duration.Valid {
-		dashboard.TodayDurationMinutes = int(duration.Int64)
+		value := int(duration.Int64)
+		dashboard.TodayDurationMinutes = &value
 	}
 	if revenue.Valid {
-		dashboard.TodayRevenueCents = revenue.Int64
+		value := revenue.Int64
+		dashboard.TodayRevenueCents = &value
 	}
 	if followers.Valid {
-		dashboard.TodayFollowersGained = followers.Int64
+		value := followers.Int64
+		dashboard.TodayFollowersGained = &value
 	}
 	dashboard.FocusAnchors, err = focusAnchorsDB(db)
 	if err != nil {
@@ -195,7 +222,7 @@ func (s *Store) Search(query string) ([]domain.SearchResult, error) {
 }
 
 func listSessionsDB(db *sql.DB, anchorID int64) ([]domain.LiveSession, error) {
-	rows, err := db.Query(`SELECT `+liveSessionColumns+` FROM live_sessions WHERE anchor_id = ? ORDER BY session_date DESC, id DESC LIMIT 500`, anchorID)
+	rows, err := db.Query(`SELECT `+liveSessionColumns+` FROM live_sessions WHERE anchor_id = ? ORDER BY session_date DESC, id DESC LIMIT 30`, anchorID)
 	if err != nil {
 		return nil, err
 	}
@@ -315,9 +342,13 @@ func anchorTrendDB(db *sql.DB, anchorID int64, days int) ([]domain.TrendPoint, e
 		days = 30
 	}
 	startDate := dateDaysAgo(days - 1)
+	return anchorTrendRangeDB(db, anchorID, startDate, today())
+}
+
+func anchorTrendRangeDB(db *sql.DB, anchorID int64, startDate, endDate string) ([]domain.TrendPoint, error) {
 	rows, err := db.Query(`SELECT s.session_date, SUM(s.duration_minutes), CAST(AVG(s.avg_online) AS INTEGER), CAST(AVG(s.avg_stay_seconds) AS INTEGER), SUM(s.followers_gained), SUM(s.revenue_cents),
         (SELECT COUNT(*) FROM anchor_events e WHERE e.anchor_id = s.anchor_id AND e.event_date = s.session_date)
-        FROM live_sessions s WHERE s.anchor_id = ? AND s.session_date >= ? GROUP BY s.session_date ORDER BY s.session_date`, anchorID, startDate)
+        FROM live_sessions s WHERE s.anchor_id = ? AND s.session_date >= ? AND s.session_date <= ? GROUP BY s.session_date ORDER BY s.session_date`, anchorID, startDate, endDate)
 	if err != nil {
 		return nil, err
 	}

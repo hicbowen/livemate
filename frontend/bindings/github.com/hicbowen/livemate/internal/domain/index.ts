@@ -31,7 +31,9 @@ export type {
     PlanFollowupInput,
     PlanSummary,
     SearchResult,
+    SessionFilter,
     SessionMetrics,
+    SessionPage,
     StageGoal,
     StageGoalInput,
     TrendPoint

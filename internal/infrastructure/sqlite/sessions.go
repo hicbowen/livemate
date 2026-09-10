@@ -185,6 +185,53 @@ func (s *Store) ListSessions(anchorID int64) ([]domain.LiveSession, error) {
 	return sessions, rows.Err()
 }
 
+// ListSessionPage is the bounded history endpoint used by the desktop detail
+// page. It avoids loading an entire anchor's history into the frontend.
+func (s *Store) ListSessionPage(filter domain.SessionFilter) (domain.SessionPage, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if filter.AnchorID <= 0 {
+		return domain.SessionPage{}, fmt.Errorf("主播 ID 无效")
+	}
+	page := filter.Page
+	if page <= 0 {
+		page = 1
+	}
+	pageSize := filter.PageSize
+	if pageSize <= 0 || pageSize > 100 {
+		pageSize = 20
+	}
+	db, err := s.dbLocked()
+	if err != nil {
+		return domain.SessionPage{}, err
+	}
+	var total int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM live_sessions WHERE anchor_id = ?`, filter.AnchorID).Scan(&total); err != nil {
+		return domain.SessionPage{}, err
+	}
+	rows, err := db.Query(`SELECT `+liveSessionColumns+` FROM live_sessions WHERE anchor_id = ? ORDER BY session_date DESC, id DESC LIMIT ? OFFSET ?`, filter.AnchorID, pageSize, (page-1)*pageSize)
+	if err != nil {
+		return domain.SessionPage{}, err
+	}
+	defer rows.Close()
+	items := make([]domain.LiveSession, 0, pageSize)
+	for rows.Next() {
+		item, err := scanLiveSession(rows)
+		if err != nil {
+			return domain.SessionPage{}, err
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return domain.SessionPage{}, err
+	}
+	totalPages := 0
+	if total > 0 {
+		totalPages = (total + pageSize - 1) / pageSize
+	}
+	return domain.SessionPage{Page: domain.PageInfo{Page: page, PageSize: pageSize, Total: total, TotalPages: totalPages}, Items: items}, nil
+}
+
 func validateSessionInput(input domain.LiveSessionInput) error {
 	if input.AnchorID <= 0 {
 		return fmt.Errorf("主播不能为空")

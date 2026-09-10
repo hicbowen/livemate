@@ -145,6 +145,40 @@ func TestSessionMetricsAndNullHandling(t *testing.T) {
 	}
 }
 
+func TestSessionHistoryIsPagedAndPersistsAcrossReopen(t *testing.T) {
+	databasePath := filepath.Join(t.TempDir(), "livemate.db")
+	store, err := OpenAt(databasePath, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	anchor := testAnchor(t, store, "分页主播")
+	for index := 0; index < 23; index++ {
+		if _, err := store.CreateSession(domain.LiveSessionInput{AnchorID: anchor.ID, SessionDate: "2026-01-01", Notes: string(rune('A' + index))}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	first, err := store.ListSessionPage(domain.SessionFilter{AnchorID: anchor.ID, Page: 1, PageSize: 20})
+	if err != nil || first.Page.Total != 23 || first.Page.TotalPages != 2 || len(first.Items) != 20 {
+		t.Fatalf("first session page = %#v err=%v", first, err)
+	}
+	second, err := store.ListSessionPage(domain.SessionFilter{AnchorID: anchor.ID, Page: 2, PageSize: 20})
+	if err != nil || len(second.Items) != 3 {
+		t.Fatalf("second session page = %#v err=%v", second, err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := OpenAt(databasePath, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	page, _, err := reopened.ListAnchors(domain.AnchorFilter{})
+	if err != nil || page.Total != 1 {
+		t.Fatalf("reopened anchor page = %#v err=%v", page, err)
+	}
+}
+
 func TestOneIssueMultiplePlansAndIndependentFollowups(t *testing.T) {
 	store := testStore(t)
 	anchor := testAnchor(t, store, "小鱼")
@@ -223,7 +257,7 @@ func TestDashboardAndBackupRestore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if dashboard.AnchorCount != 1 || dashboard.TodayLiveAnchorCount != 1 || dashboard.TodayDurationMinutes != 120 || dashboard.TodayRevenueCents != 10000 || dashboard.TodayFollowersGained != 7 {
+	if dashboard.AnchorCount != 1 || dashboard.TodayLiveAnchorCount != 1 || dashboard.TodayDurationMinutes == nil || *dashboard.TodayDurationMinutes != 120 || dashboard.TodayRevenueCents == nil || *dashboard.TodayRevenueCents != 10000 || dashboard.TodayFollowersGained == nil || *dashboard.TodayFollowersGained != 7 {
 		t.Fatalf("dashboard overview incorrect: %#v", dashboard)
 	}
 	if len(dashboard.FocusAnchors) != 0 || len(dashboard.PendingIssues) != 1 || len(dashboard.ActivePlans) != 1 || len(dashboard.StalePlans) != 1 {

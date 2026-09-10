@@ -6,6 +6,7 @@ import (
 
 	"github.com/hicbowen/livemate/internal/domain"
 	"github.com/hicbowen/livemate/internal/infrastructure/sqlite"
+	"github.com/hicbowen/livemate/internal/platform"
 )
 
 // Service contains application use cases. The Wails bridge delegates to this
@@ -46,6 +47,9 @@ func (s *Service) GetAnchorDetail(id int64) (domain.AnchorDetail, error) {
 func (s *Service) ListSessions(anchorID int64) ([]domain.LiveSession, error) {
 	return s.store.ListSessions(anchorID)
 }
+func (s *Service) ListSessionPage(filter domain.SessionFilter) (domain.SessionPage, error) {
+	return s.store.ListSessionPage(filter)
+}
 func (s *Service) GetSession(id int64) (domain.LiveSession, error) { return s.store.GetSession(id) }
 func (s *Service) CreateSession(input domain.LiveSessionInput) (domain.LiveSession, error) {
 	return s.store.CreateSession(input)
@@ -56,6 +60,9 @@ func (s *Service) UpdateSession(id int64, input domain.LiveSessionInput) (domain
 func (s *Service) DeleteSession(id int64) error { return s.store.DeleteSession(id) }
 func (s *Service) GetAnchorTrend(anchorID int64, days int) ([]domain.TrendPoint, error) {
 	return s.store.GetAnchorTrend(anchorID, days)
+}
+func (s *Service) GetAnchorTrendRange(anchorID int64, startDate, endDate string) ([]domain.TrendPoint, error) {
+	return s.store.GetAnchorTrendRange(anchorID, startDate, endDate)
 }
 
 func (s *Service) ListReviews(anchorID int64) ([]domain.OperationReview, error) {
@@ -150,6 +157,8 @@ func (s *Service) ImportBackup(archiveBase64 string) error {
 	return s.store.ImportBackup(archiveBase64, domain.AppVersion)
 }
 
-func (s *Service) DataDirectory() string   { return s.store.Paths().DataDir }
-func (s *Service) LogDirectory() string    { return s.store.Paths().LogDir }
-func (s *Service) BackupDirectory() string { return s.store.Paths().BackupDir }
+func (s *Service) DataDirectory() string    { return s.store.Paths().DataDir }
+func (s *Service) LogDirectory() string     { return s.store.Paths().LogDir }
+func (s *Service) BackupDirectory() string  { return s.store.Paths().BackupDir }
+func (s *Service) OpenDataDirectory() error { return platform.OpenDirectory(s.store.Paths().DataDir) }
+func (s *Service) OpenLogDirectory() error  { return platform.OpenDirectory(s.store.Paths().LogDir) }
