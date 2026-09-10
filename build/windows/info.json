@@ -1,15 +1,15 @@
 {
 	"fixed": {
-		"file_version": "0.1.0"
+		"file_version": "1.0.0"
 	},
 	"info": {
 		"0000": {
-			"ProductVersion": "0.1.0",
-			"CompanyName": "My Company",
-			"FileDescription": "A livemate application",
-			"LegalCopyright": "© 2026, My Company",
+			"ProductVersion": "1.0.0",
+			"CompanyName": "播伴",
+			"FileDescription": "主播运营管理与 AI 辅助工具",
+			"LegalCopyright": "(c) 2026, 播伴",
 			"ProductName": "播伴",
-			"Comments": "This is a comment"
+			"Comments": "事实驱动的主播运营工作台"
 		}
 	}
 }

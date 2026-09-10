@@ -1,13 +1,13 @@
 [Desktop Entry]
 Version=1.0
 Name=播伴
-Comment=A livemate application
+Comment=主播运营管理与 AI 辅助工具
 # The Exec line includes %u to pass the URL to the application
-Exec=/usr/local/bin/livemate.exe %u
+Exec=/usr/local/bin/livemate %u
 Terminal=false
 Type=Application
-Icon=livemate.exe
+Icon=livemate
 Categories=Utility;
-StartupWMClass=livemate.exe
+StartupWMClass=livemate
 
  

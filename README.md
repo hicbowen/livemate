@@ -1,59 +1,34 @@
-# Welcome to Your New Wails3 Project!
+# 播伴（livemate）
 
-Congratulations on generating your Wails3 application! This README will guide you through the next steps to get your project up and running.
+播伴是一个本地优先的主播运营管理桌面应用。它把主播档案、直播场次、事实复盘、问题、改进方案、跟进记录和阶段目标串成一条可追溯的运营闭环，并为后续 AI 辅助预留结构化数据基础。
 
-## Getting Started
+## 开发与构建
 
-1. Navigate to your project directory in the terminal.
+```powershell
+npm --prefix frontend install
+wails3 dev
+wails3 build
+```
 
-2. To run your application in development mode, use the following command:
+前端也可以单独检查：
 
-   ```
-   wails3 dev
-   ```
+```powershell
+npm --prefix frontend run build
+```
 
-   This will start your application and enable hot-reloading for both frontend and backend changes.
+## 数据位置
 
-3. To build your application for production, use:
+运行时数据默认保存在操作系统用户配置目录下的 `livemate` 子目录中，包含：
 
-   ```
-   wails3 build
-   ```
+- `livemate.db`：SQLite 数据库
+- `config.json`：本地配置
+- `logs/`：应用日志
+- `backups/`：导出的备份
 
-   This will create a production-ready executable in the `build` directory.
+具体绝对路径可在「设置」页查看。备份 ZIP 包含数据库、配置和清单；导入前会自动备份当前数据，并校验数据库完整性。
 
-## Exploring Wails3 Features
+## 当前闭环
 
-Now that you have your project set up, it's time to explore the features that Wails3 offers:
+主播档案 → 直播记录 → 运营复盘 → 问题 → 一个或多个改进方案 → 跟进 / 效果 / 下一步动作。
 
-1. **Check out the examples**: The best way to learn is by example. Visit the `examples` directory in the `v3/examples` directory to see various sample applications.
-
-2. **Run an example**: To run any of the examples, navigate to the example's directory and use:
-
-   ```
-   go run .
-   ```
-
-   Note: Some examples may be under development during the alpha phase.
-
-3. **Explore the documentation**: Visit the [Wails3 documentation](https://v3.wails.io/) for in-depth guides and API references.
-
-4. **Join the community**: Have questions or want to share your progress? Join the [Wails Discord](https://discord.gg/JDdSxwjhGf) or visit the [Wails discussions on GitHub](https://github.com/wailsapp/wails/discussions).
-
-## Project Structure
-
-Take a moment to familiarize yourself with your project structure:
-
-- `frontend/`: Contains your frontend code (HTML, CSS, JavaScript/TypeScript)
-- `main.go`: The entry point of your Go backend
-- `app.go`: Define your application structure and methods here
-- `wails.json`: Configuration file for your Wails project
-
-## Next Steps
-
-1. Modify the frontend in the `frontend/` directory to create your desired UI.
-2. Add backend functionality in `main.go`.
-3. Use `wails3 dev` to see your changes in real-time.
-4. When ready, build your application with `wails3 build`.
-
-Happy coding with Wails3! If you encounter any issues or have questions, don't hesitate to consult the documentation or reach out to the Wails community.
+应用不依赖云端同步，也不会在 MVP 阶段拉取平台 API 或把 AI 作为核心流程。未知指标保持为空，金额以整数分保存，主播删除采用归档而不是物理删除。

@@ -9,14 +9,14 @@
   
   <Identity 
     Name="cn.cbowen.livemate"
-    Publisher="CN=My Company"
+    Publisher="CN=播伴"
     Version="0.1.0.0" 
     ProcessorArchitecture="x64" />
   
   <Properties>
     <DisplayName>播伴</DisplayName>
-    <PublisherDisplayName>My Company</PublisherDisplayName>
-    <Description>A livemate application</Description>
+    <PublisherDisplayName>播伴</PublisherDisplayName>
+    <Description>主播运营管理与 AI 辅助工具</Description>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
   
@@ -32,7 +32,7 @@
     <Application Id="cn.cbowen.livemate" Executable="livemate.exe" EntryPoint="Windows.FullTrustApplication">
       <uap:VisualElements
         DisplayName="播伴"
-        Description="A livemate application"
+        Description="主播运营管理与 AI 辅助工具"
         BackgroundColor="transparent"
         Square150x150Logo="Assets\Square150x150Logo.png"
         Square44x44Logo="Assets\Square44x44Logo.png">

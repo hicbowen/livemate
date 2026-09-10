@@ -10,15 +10,15 @@
     <Installer
         Path="livemate.exe"
         Arguments=""
-        InstallLocation="C:\Program Files\My Company\播伴">
+        InstallLocation="C:\Program Files\播伴\播伴">
     </Installer>
     <PackageInformation
         PackageName="播伴"
         PackageDisplayName="播伴"
-        PublisherName="CN=My Company"
-        PublisherDisplayName="My Company"
+        PublisherName="CN=播伴"
+        PublisherDisplayName="播伴"
         Version="0.1.0.0"
-        PackageDescription="A livemate application">
+        PackageDescription="主播运营管理与 AI 辅助工具">
         <Capabilities>
             <Capability Name="runFullTrust" />
             
@@ -26,7 +26,7 @@
         <Applications>
             <Application
                 Id="cn.cbowen.livemate"
-                Description="A livemate application"
+                Description="主播运营管理与 AI 辅助工具"
                 DisplayName="播伴"
                 ExecutableName="livemate.exe"
                 EntryPoint="Windows.FullTrustApplication">
@@ -42,8 +42,8 @@
         <Properties>
             <Framework>false</Framework>
             <DisplayName>播伴</DisplayName>
-            <PublisherDisplayName>My Company</PublisherDisplayName>
-            <Description>A livemate application</Description>
+            <PublisherDisplayName>播伴</PublisherDisplayName>
+            <Description>主播运营管理与 AI 辅助工具</Description>
             <Logo>Assets\AppIcon.png</Logo>
         </Properties>
     </PackageInformation>

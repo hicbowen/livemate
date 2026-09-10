@@ -1,6 +1,7 @@
 .task
 .gocache
 bin
+*.syso
 frontend/dist
 frontend/node_modules
 build/linux/appimage/build
