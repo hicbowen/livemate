@@ -53,9 +53,15 @@ func main() {
 	})
 
 	app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title:  domain.ProductName,
-		Width:  1280,
-		Height: 800,
+		Title:     domain.ProductName,
+		Width:     1280,
+		Height:    800,
+		MinWidth:  1024,
+		MinHeight: 640,
+		Frameless: true,
+		Windows: application.WindowsWindow{
+			NonClientRegionSupport: true,
+		},
 		Mac: application.MacWindow{
 			InvisibleTitleBarHeight: 50,
 			Backdrop:                application.MacBackdropTranslucent,

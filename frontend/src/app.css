@@ -10,11 +10,37 @@
 
 html, body, #root { min-width: 1024px; min-height: 100%; margin: 0; }
 
-body { background: #f6f8fb; }
+html, body, #root { width: 100%; height: 100%; }
+
+body { overflow: hidden; background: #f6f8fb; }
 
 button, input, textarea, select { font: inherit; }
 
 button { cursor: pointer; }
+
+.app-shell { height: 100%; min-height: 0; }
+
+.window-title-bar {
+  --wails-non-client-region: caption;
+  --wails-draggable: drag;
+  min-width: 0;
+  border-bottom: 1px solid #e6ecef;
+  background: #fff;
+}
+
+.window-title-bar .app-shell__pane-toggle,
+.window-title-bar .app-title-bar__controls,
+.window-title-bar .app-title-bar__button {
+  --wails-non-client-region: initial;
+  --wails-draggable: no-drag;
+  -webkit-app-region: no-drag;
+}
+
+.window-title-bar .app-title-bar__controls > button:nth-child(1) { --wails-non-client-region: minimize; }
+.window-title-bar .app-title-bar__controls > button:nth-child(2) { --wails-non-client-region: maximize; }
+.window-title-bar .app-title-bar__controls > button:nth-child(3) { --wails-non-client-region: close; }
+.window-title-bar .app-title-bar__button:hover { background: #eef4f3; }
+.window-title-bar .app-title-bar__button--danger:hover { background: #c84c4c; color: #fff; }
 
 .app-logo {
   display: inline-flex;
@@ -29,11 +55,12 @@ button { cursor: pointer; }
   letter-spacing: -0.08em;
 }
 
-.sidebar-brand { display: flex; align-items: center; gap: 10px; padding: 4px 2px; }
-.sidebar-brand > span:last-child { display: grid; gap: 2px; }
+.sidebar-brand { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 4px 2px; }
+.sidebar-brand > span:last-child { display: grid; gap: 2px; min-width: 0; }
 .sidebar-brand strong { font-size: 14px; line-height: 1; }
-.sidebar-brand small { color: #71808d; font-size: 11px; }
-.rail-icon { display: inline-flex; width: 18px; justify-content: center; color: currentColor; font-size: 18px; line-height: 1; }
+.sidebar-brand small { overflow: hidden; color: #71808d; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.rail-icon { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; color: currentColor; line-height: 1; }
+.rail-icon svg { display: block; width: 16px; height: 16px; }
 .app-content-stack { position: relative; min-height: 100%; }
 .global-search-wrap { position: relative; z-index: 20; display: flex; justify-content: flex-end; padding: 12px 24px 0; }
 .global-search { width: min(420px, 100%); }

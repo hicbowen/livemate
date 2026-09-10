@@ -7,14 +7,16 @@ import {
   AppField,
   AppPage,
   AppRail,
-  AppSearchBox,
-  AppSelect,
-  AppShell,
-  AppStatusBadge,
-  AppTextArea,
-  AppTextBox,
+	AppSearchBox,
+	AppSelect,
+	AppShell,
+	AppTitleBar,
+	AppStatusBadge,
+	AppTextArea,
+	AppTextBox,
 } from 'react-desktop-shell'
 import 'react-desktop-shell/style.css'
+import Window from '@wailsio/runtime'
 
 import type {
   Anchor,
@@ -52,8 +54,27 @@ function Badge({ children }: { children: string }) {
   return <AppStatusBadge status={badgeTone(children)} appearance="subtle" size="small" marker="dot">{children}</AppStatusBadge>
 }
 
-function Icon({ children }: { children: ReactNode }) {
-  return <span className="rail-icon" aria-hidden="true">{children}</span>
+type IconName = 'dashboard' | 'anchors' | 'settings'
+
+function Icon({ name }: { name: IconName }) {
+	return <span className="rail-icon" aria-hidden="true">
+		<svg viewBox="0 0 20 20" fill="none" focusable="false">
+			{ name === 'dashboard' && <>
+				<rect x="3" y="3" width="5.5" height="5.5" rx="1.1" stroke="currentColor" strokeWidth="1.5" />
+				<rect x="11.5" y="3" width="5.5" height="5.5" rx="1.1" stroke="currentColor" strokeWidth="1.5" />
+				<rect x="3" y="11.5" width="5.5" height="5.5" rx="1.1" stroke="currentColor" strokeWidth="1.5" />
+				<rect x="11.5" y="11.5" width="5.5" height="5.5" rx="1.1" stroke="currentColor" strokeWidth="1.5" />
+			</> }
+			{ name === 'anchors' && <>
+				<circle cx="10" cy="7" r="2.7" stroke="currentColor" strokeWidth="1.5" />
+				<path d="M4.8 16c.7-2.2 2.5-3.5 5.2-3.5s4.5 1.3 5.2 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+			</> }
+			{ name === 'settings' && <>
+				<circle cx="10" cy="10" r="3" stroke="currentColor" strokeWidth="1.5" />
+				<path d="M10 3.2v1.3M10 15.5v1.3M3.2 10h1.3M15.5 10h1.3M5.2 5.2l.9.9M13.9 13.9l.9.9M14.8 5.2l-.9.9M6.1 13.9l-.9.9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+			</> }
+		</svg>
+	</span>
 }
 
 function ErrorNotice({ message, onDismiss }: { message: string; onDismiss?: () => void }) {
@@ -233,12 +254,58 @@ function App() {
   const selectedAnchorId = useAppStore((state) => state.selectedAnchorId)
   const selectAnchor = useAppStore((state) => state.selectAnchor)
   const [refresh, setRefresh] = useState(0)
+  const [maximized, setMaximized] = useState(false)
+
+  useEffect(() => {
+    let alive = true
+    void Window.IsMaximised().then((value) => {
+      if (alive) setMaximized(value)
+    }).catch(() => undefined)
+    return () => { alive = false }
+  }, [])
 
   const openAnchor = (id: number) => { selectAnchor(id); setRefresh((value) => value + 1) }
   const backToAnchors = () => { selectAnchor(null); setView('anchors') }
   const activeView: AppView = view === 'anchor-detail' ? 'anchors' : view
+  const toggleMaximise = () => {
+    void Window.ToggleMaximise()
+      .then(() => Window.IsMaximised())
+      .then(setMaximized)
+      .catch(() => undefined)
+  }
 
-  return <AppShell theme="system" themePreset="teal" title="播伴" icon={<span className="app-logo">伴</span>} sidebar={{ displayMode: 'auto', collapsible: true }} sidebarHeader={<div className="sidebar-brand"><span className="app-logo">伴</span><span><strong>播伴</strong><small>主播运营管理</small></span></div>} rail={<AppRail value={activeView} onValueChange={(value) => { if (value === 'dashboard' || value === 'anchors' || value === 'settings') setView(value) }} items={[{ key: 'dashboard', label: '运营首页', icon: <Icon>⌂</Icon> }, { key: 'anchors', label: '主播档案', icon: <Icon>◎</Icon> }, { type: 'group', label: '工作闭环' }, { key: 'reviews', label: '复盘与问题', icon: <Icon>≡</Icon>, disabled: true }, { key: 'plans', label: '改进方案', icon: <Icon>↗</Icon>, disabled: true }]} footerItems={[{ key: 'settings', label: '设置', icon: <Icon>⚙</Icon> }]} />}><div className="app-content-stack"><GlobalSearch onOpenAnchor={openAnchor} />{view === 'dashboard' && <DashboardPage onOpenAnchor={openAnchor} />}{view === 'anchors' && <AnchorsPage onOpenAnchor={openAnchor} />}{view === 'anchor-detail' && selectedAnchorId && <AnchorDetailPage anchorId={selectedAnchorId} refreshKey={refresh} onBack={backToAnchors} />}{view === 'settings' && <SettingsPage />}</div></AppShell>
+	return <AppShell
+		theme="system"
+		themePreset="teal"
+		title="播伴"
+		icon={<span className="app-logo">伴</span>}
+		titleBar={<AppTitleBar
+			className="window-title-bar"
+			maximized={maximized}
+			onMinimize={() => { void Window.Minimise() }}
+			onToggleMaximize={toggleMaximise}
+			onClose={() => { void Window.Close() }}
+		/>}
+		sidebar={{ displayMode: 'auto', collapsible: true }}
+		sidebarHeader={<div className="sidebar-brand"><span className="app-logo">伴</span><span><strong>播伴</strong><small>主播运营管理</small></span></div>}
+		rail={<AppRail
+			value={activeView}
+			onValueChange={(value) => { if (value === 'dashboard' || value === 'anchors' || value === 'settings') setView(value) }}
+			items={[
+				{ key: 'dashboard', label: '运营首页', icon: <Icon name="dashboard" /> },
+				{ key: 'anchors', label: '主播档案', icon: <Icon name="anchors" /> },
+			]}
+			footerItems={[{ key: 'settings', label: '设置', icon: <Icon name="settings" /> }]}
+		/>}
+	>
+		<div className="app-content-stack">
+			<GlobalSearch onOpenAnchor={openAnchor} />
+			{view === 'dashboard' && <DashboardPage onOpenAnchor={openAnchor} />}
+			{view === 'anchors' && <AnchorsPage onOpenAnchor={openAnchor} />}
+			{view === 'anchor-detail' && selectedAnchorId && <AnchorDetailPage anchorId={selectedAnchorId} refreshKey={refresh} onBack={backToAnchors} />}
+			{view === 'settings' && <SettingsPage />}
+		</div>
+	</AppShell>
 }
 
 export default App
