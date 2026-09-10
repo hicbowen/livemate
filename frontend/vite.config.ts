@@ -5,7 +5,9 @@ import wails from "@wailsio/runtime/plugins/vite";
 // https://vitejs.dev/config/
 export default defineConfig({
   server: {
-    host: "localhost",
+    // Wails 3's Windows dev proxy dials the frontend over IPv4.
+    // Avoid localhost resolving to ::1 and leaving the proxy unable to connect.
+    host: "127.0.0.1",
     port: Number(process.env.WAILS_VITE_PORT) || 9245,
     strictPort: true,
   },
