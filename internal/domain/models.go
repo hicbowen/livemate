@@ -398,14 +398,29 @@ type TrendPoint struct {
 }
 
 type AnchorDetail struct {
-	Anchor   Anchor            `json:"anchor"`
-	Sessions []LiveSession     `json:"sessions"`
-	Reviews  []OperationReview `json:"reviews"`
-	Issues   []AnchorIssue     `json:"issues"`
-	Plans    []ImprovementPlan `json:"plans"`
-	Goals    []StageGoal       `json:"goals"`
-	Events   []AnchorEvent     `json:"events"`
-	Trend    []TrendPoint      `json:"trend"`
+	Anchor        Anchor            `json:"anchor"`
+	Sessions      []LiveSession     `json:"sessions"`
+	Reviews       []OperationReview `json:"reviews"`
+	Issues        []AnchorIssue     `json:"issues"`
+	Plans         []ImprovementPlan `json:"plans"`
+	Followups     []PlanFollowup    `json:"followups"`
+	Goals         []StageGoal       `json:"goals"`
+	Events        []AnchorEvent     `json:"events"`
+	StatusChanges []StatusChange    `json:"status_changes"`
+	Trend         []TrendPoint      `json:"trend"`
+}
+
+// StatusChange is an audit entry used by the anchor timeline. Status history
+// is recorded by SQLite triggers so changes made through any application use
+// case are visible without relying on the frontend to remember old values.
+type StatusChange struct {
+	ID          int64  `json:"id"`
+	AnchorID    int64  `json:"anchor_id"`
+	EntityType  string `json:"entity_type"`
+	EntityID    int64  `json:"entity_id"`
+	EntityTitle string `json:"entity_title"`
+	Status      string `json:"status"`
+	ChangedAt   string `json:"changed_at"`
 }
 
 type FocusAnchor struct {
@@ -452,6 +467,15 @@ type ExpiringGoal struct {
 	DaysRemaining  int    `json:"days_remaining"`
 }
 
+type StaleAnchor struct {
+	AnchorID        int64   `json:"anchor_id"`
+	Nickname        string  `json:"nickname"`
+	Stage           string  `json:"stage"`
+	Status          string  `json:"status"`
+	LastSessionDate *string `json:"last_session_date"`
+	DaysSinceLive   int     `json:"days_since_live"`
+}
+
 type Dashboard struct {
 	GeneratedAt             string         `json:"generated_at"`
 	Today                   string         `json:"today"`
@@ -466,6 +490,7 @@ type Dashboard struct {
 	ActivePlans             []PlanSummary  `json:"active_plans"`
 	StalePlans              []PlanSummary  `json:"stale_plans"`
 	ExpiringGoals           []ExpiringGoal `json:"expiring_goals"`
+	StaleAnchors            []StaleAnchor  `json:"stale_anchors"`
 	StaleDays               int            `json:"stale_days"`
 }
 

@@ -59,6 +59,13 @@ export function formatDateTime(value: string | null | undefined): string {
   if (!value) {
     return '暂无记录'
   }
+  if (value.length <= 10) {
+    return value.slice(0, 10)
+  }
+  const parsed = new Date(value)
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).replace(/\//g, '-')
+  }
   return value.replace('T', ' ').slice(0, 16)
 }
 

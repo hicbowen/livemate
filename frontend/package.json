@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@tanstack/react-table": "^8.21.3",
     "@wailsio/runtime": "latest",
     "react": "^18.2.0",
     "react-desktop-shell": "^0.22.0",

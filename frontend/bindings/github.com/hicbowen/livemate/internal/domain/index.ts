@@ -36,5 +36,7 @@ export type {
     SessionPage,
     StageGoal,
     StageGoalInput,
+    StaleAnchor,
+    StatusChange,
     TrendPoint
 } from "./models.js";

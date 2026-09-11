@@ -205,6 +205,36 @@ func normalizeDate(value string) string {
 	return value
 }
 
+// normalizeDateTimePtr keeps browser datetime-local values and imported
+// records consistent. Values without an explicit timezone are interpreted in
+// the machine's local timezone; values with a timezone keep their offset.
+func normalizeDateTimePtr(value *string) (*string, error) {
+	if value == nil || strings.TrimSpace(*value) == "" {
+		return nil, nil
+	}
+	raw := strings.TrimSpace(*value)
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339} {
+		if parsed, err := time.Parse(layout, raw); err == nil {
+			normalized := parsed.Format(time.RFC3339Nano)
+			return &normalized, nil
+		}
+	}
+	for _, layout := range []string{
+		"2006-01-02T15:04",
+		"2006-01-02T15:04:05",
+		"2006-01-02T15:04:05.999999999",
+		"2006-01-02 15:04",
+		"2006-01-02 15:04:05",
+		"2006-01-02 15:04:05.999999999",
+	} {
+		if parsed, err := time.ParseInLocation(layout, raw, time.Local); err == nil {
+			normalized := parsed.Format(time.RFC3339Nano)
+			return &normalized, nil
+		}
+	}
+	return nil, fmt.Errorf("时间格式无效：%s", raw)
+}
+
 func validateDate(value, field string) error {
 	if value == "" {
 		return fmt.Errorf("%s不能为空", field)
@@ -311,8 +341,8 @@ func (s *Store) ImportBackup(archiveBase64, appVersion string) error {
 	if manifest.App != domain.ProjectName {
 		return fmt.Errorf("导入失败：备份来自不兼容的应用 %q", manifest.App)
 	}
-	if manifest.Version == "" {
-		return errors.New("导入失败：备份缺少版本信息")
+	if !compatibleBackupVersion(manifest.Version, fallbackVersion(appVersion)) {
+		return fmt.Errorf("导入失败：备份版本 %q 与当前版本 %q 不兼容", manifest.Version, fallbackVersion(appVersion))
 	}
 	if _, err := config.ReadConfigBytes(configBytes); err != nil {
 		return fmt.Errorf("导入失败：配置文件无效：%w", err)
@@ -523,4 +553,40 @@ func fallbackVersion(value string) string {
 		return domain.AppVersion
 	}
 	return value
+}
+
+func compatibleBackupVersion(backupVersion, currentVersion string) bool {
+	parse := func(value string) ([3]int, bool) {
+		var result [3]int
+		value = strings.TrimPrefix(strings.TrimSpace(value), "v")
+		parts := strings.Split(value, ".")
+		if len(parts) != 3 {
+			return result, false
+		}
+		for index, part := range parts {
+			if part == "" {
+				return result, false
+			}
+			parsed, err := strconv.Atoi(part)
+			if err != nil || parsed < 0 {
+				return result, false
+			}
+			result[index] = parsed
+		}
+		return result, true
+	}
+	backup, backupOK := parse(backupVersion)
+	current, currentOK := parse(currentVersion)
+	if !backupOK || !currentOK || backup[0] != current[0] {
+		return false
+	}
+	for index := 1; index >= 0; index-- {
+		if backup[index] < current[index] {
+			return true
+		}
+		if backup[index] > current[index] {
+			return false
+		}
+	}
+	return backup[2] <= current[2]
 }

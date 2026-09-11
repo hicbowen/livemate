@@ -91,8 +91,13 @@ func ResolveFollowers(before, after, manual *int64) *int64 {
 }
 
 func parseTime(value string) (time.Time, error) {
-	for _, layout := range []string{time.RFC3339, "2006-01-02T15:04", "2006-01-02 15:04:05", "2006-01-02 15:04"} {
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339} {
 		if parsed, err := time.Parse(layout, value); err == nil {
+			return parsed, nil
+		}
+	}
+	for _, layout := range []string{"2006-01-02T15:04", "2006-01-02T15:04:05", "2006-01-02T15:04:05.999999999", "2006-01-02 15:04:05", "2006-01-02 15:04:05.999999999", "2006-01-02 15:04"} {
+		if parsed, err := time.ParseInLocation(layout, value, time.Local); err == nil {
 			return parsed, nil
 		}
 	}

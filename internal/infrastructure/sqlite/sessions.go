@@ -18,6 +18,15 @@ func (s *Store) CreateSession(input domain.LiveSessionInput) (domain.LiveSession
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	input.SessionDate = normalizeDate(input.SessionDate)
+	var err error
+	input.StartedAt, err = normalizeDateTimePtr(input.StartedAt)
+	if err != nil {
+		return domain.LiveSession{}, fmt.Errorf("保存直播记录失败：开播时间%s", err)
+	}
+	input.EndedAt, err = normalizeDateTimePtr(input.EndedAt)
+	if err != nil {
+		return domain.LiveSession{}, fmt.Errorf("保存直播记录失败：下播时间%s", err)
+	}
 	if err := validateSessionInput(input); err != nil {
 		return domain.LiveSession{}, err
 	}
@@ -66,6 +75,15 @@ func (s *Store) UpdateSession(id int64, input domain.LiveSessionInput) (domain.L
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	input.SessionDate = normalizeDate(input.SessionDate)
+	var err error
+	input.StartedAt, err = normalizeDateTimePtr(input.StartedAt)
+	if err != nil {
+		return domain.LiveSession{}, fmt.Errorf("保存直播记录失败：开播时间%s", err)
+	}
+	input.EndedAt, err = normalizeDateTimePtr(input.EndedAt)
+	if err != nil {
+		return domain.LiveSession{}, fmt.Errorf("保存直播记录失败：下播时间%s", err)
+	}
 	if id <= 0 {
 		return domain.LiveSession{}, fmt.Errorf("直播记录 ID 无效")
 	}
@@ -77,6 +95,9 @@ func (s *Store) UpdateSession(id int64, input domain.LiveSessionInput) (domain.L
 		return domain.LiveSession{}, err
 	}
 	if err := anchorExists(db, input.AnchorID, true); err != nil {
+		return domain.LiveSession{}, err
+	}
+	if err := sessionBelongsToAnchor(db, id, input.AnchorID); err != nil {
 		return domain.LiveSession{}, err
 	}
 	duration, err := metrics.ResolveDuration(input.StartedAt, input.EndedAt, input.DurationMinutes, input.DurationOverride)

@@ -1,9 +1,11 @@
 package sqlite
 
 import (
+	"encoding/base64"
 	"math"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/hicbowen/livemate/internal/domain"
 )
@@ -48,6 +50,13 @@ func TestMigrationAndAnchorSoftDelete(t *testing.T) {
 	}
 	if migrationCount != 1 {
 		t.Fatalf("migration count = %d, want 1", migrationCount)
+	}
+	var statusHistoryMigrationCount int
+	if err := store.db.QueryRow(`SELECT COUNT(*) FROM schema_migrations WHERE version = 2 AND name = '002_status_history.sql'`).Scan(&statusHistoryMigrationCount); err != nil {
+		t.Fatalf("status history migration query: %v", err)
+	}
+	if statusHistoryMigrationCount != 1 {
+		t.Fatalf("status history migration count = %d, want 1", statusHistoryMigrationCount)
 	}
 	anchor := testAnchor(t, store, "小鱼")
 	if len(anchor.Tags) != 2 {
@@ -103,6 +112,12 @@ func TestSessionMetricsAndNullHandling(t *testing.T) {
 	}
 	if session.DurationMinutes == nil || *session.DurationMinutes != 240 {
 		t.Fatalf("duration = %#v, want 240", session.DurationMinutes)
+	}
+	if session.StartedAt == nil {
+		t.Fatal("normalized start time is nil")
+	}
+	if _, err := time.Parse(time.RFC3339Nano, *session.StartedAt); err != nil {
+		t.Fatalf("normalized start time = %q, want RFC3339: %v", *session.StartedAt, err)
 	}
 	if session.FollowersGained == nil || *session.FollowersGained != 20 {
 		t.Fatalf("followers gained = %#v, want 20", session.FollowersGained)
@@ -263,6 +278,9 @@ func TestDashboardAndBackupRestore(t *testing.T) {
 	if len(dashboard.FocusAnchors) != 0 || len(dashboard.PendingIssues) != 1 || len(dashboard.ActivePlans) != 1 || len(dashboard.StalePlans) != 1 {
 		t.Fatalf("dashboard lists incorrect: %#v", dashboard)
 	}
+	if len(dashboard.StaleAnchors) != 0 {
+		t.Fatalf("active anchor with a session today was marked stale: %#v", dashboard.StaleAnchors)
+	}
 
 	export, err := store.ExportBackup(domain.AppVersion)
 	if err != nil {
@@ -295,5 +313,113 @@ func TestDashboardAndBackupRestore(t *testing.T) {
 	var integrity string
 	if err := store.db.QueryRow(`PRAGMA integrity_check`).Scan(&integrity); err != nil || integrity != "ok" {
 		t.Fatalf("integrity after restore = %q err=%v", integrity, err)
+	}
+
+	dbBytes, configBytes, manifest, err := readArchive(mustArchiveBytes(t, export.ArchiveBase64))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest.Version = "2.0.0"
+	futureArchive, err := buildArchive(dbBytes, configBytes, manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ImportBackup(base64.StdEncoding.EncodeToString(futureArchive), domain.AppVersion); err == nil {
+		t.Fatal("future major backup should be rejected")
+	}
+}
+
+func mustArchiveBytes(t *testing.T, value string) []byte {
+	t.Helper()
+	archive, err := base64.StdEncoding.DecodeString(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return archive
+}
+
+func TestStatusHistoryAndCrossAnchorOwnership(t *testing.T) {
+	store := testStore(t)
+	anchorA := testAnchor(t, store, "主播 A")
+	anchorB := testAnchor(t, store, "主播 B")
+	reviewA, err := store.CreateReview(domain.OperationReviewInput{AnchorID: anchorA.ID, ReviewDate: today(), Summary: "A 的复盘"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	issueA, err := store.CreateIssue(domain.AnchorIssueInput{AnchorID: anchorA.ID, ReviewID: int64p(reviewA.ID), Title: "A 的问题", Category: "留存", Priority: "重点"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	issueB, err := store.CreateIssue(domain.AnchorIssueInput{AnchorID: anchorB.ID, Title: "B 的问题", Category: "互动", Priority: "普通"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	planA, err := store.CreatePlan(domain.ImprovementPlanInput{AnchorID: anchorA.ID, IssueID: issueA.ID, Title: "A 的方案", StartDate: today(), Status: "待执行"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	planB, err := store.CreatePlan(domain.ImprovementPlanInput{AnchorID: anchorB.ID, IssueID: issueB.ID, Title: "B 的方案", StartDate: today(), Status: "待执行"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionA, err := store.CreateSession(domain.LiveSessionInput{AnchorID: anchorA.ID, SessionDate: today(), StartedAt: stringp(today() + "T18:00"), EndedAt: stringp(today() + "T19:30")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpdateSession(sessionA.ID, domain.LiveSessionInput{AnchorID: anchorB.ID, SessionDate: today()}); err == nil {
+		t.Fatal("session should not move between anchors")
+	}
+	followup, err := store.AddFollowup(domain.PlanFollowupInput{PlanID: planA.ID, AnchorID: anchorA.ID, FollowupDate: today(), ExecutionStatus: "未执行", Effect: "暂不判断", NextAction: "继续"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpdateFollowup(followup.ID, domain.PlanFollowupInput{PlanID: planB.ID, AnchorID: anchorB.ID, FollowupDate: today(), ExecutionStatus: "未执行", Effect: "暂不判断", NextAction: "继续"}); err == nil {
+		t.Fatal("followup should not move between plans or anchors")
+	}
+	if _, err := store.ChangeIssueStatus(issueA.ID, "处理中"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ChangePlanStatus(planA.ID, "执行中"); err != nil {
+		t.Fatal(err)
+	}
+	detail, err := store.GetAnchorDetail(anchorA.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(detail.Followups) != 1 {
+		t.Fatalf("anchor detail followups = %d, want 1", len(detail.Followups))
+	}
+	if len(detail.StatusChanges) < 4 {
+		t.Fatalf("status history entries = %d, want insert and change entries", len(detail.StatusChanges))
+	}
+	seenIssue, seenPlan := false, false
+	for _, change := range detail.StatusChanges {
+		if change.EntityType == "issue" && change.EntityID == issueA.ID && change.Status == "处理中" && change.EntityTitle == "A 的问题" {
+			seenIssue = true
+		}
+		if change.EntityType == "plan" && change.EntityID == planA.ID && change.Status == "执行中" && change.EntityTitle == "A 的方案" {
+			seenPlan = true
+		}
+	}
+	if !seenIssue || !seenPlan {
+		t.Fatalf("status history missing issue/plan changes: %#v", detail.StatusChanges)
+	}
+
+	stale, err := store.CreateAnchor(domain.AnchorInput{Nickname: "长期未播", Platform: "抖音", Status: "正常开播"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.db.Exec(`UPDATE anchors SET created_at = ? WHERE id = ?`, dateDaysAgo(8)+"T00:00:00+08:00", stale.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateSession(domain.LiveSessionInput{AnchorID: stale.ID, SessionDate: dateDaysAgo(5)}); err != nil {
+		t.Fatal(err)
+	}
+	dashboard, err := store.GetDashboard(3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dashboard.StaleAnchors) != 1 || dashboard.StaleAnchors[0].AnchorID != stale.ID {
+		t.Fatalf("stale anchors = %#v, want only %d", dashboard.StaleAnchors, stale.ID)
 	}
 }

@@ -36,6 +36,10 @@ func (s *Store) GetAnchorDetail(anchorID int64) (domain.AnchorDetail, error) {
 	if err != nil {
 		return domain.AnchorDetail{}, err
 	}
+	followups, err := listFollowupsDB(db, anchorID)
+	if err != nil {
+		return domain.AnchorDetail{}, err
+	}
 	goals, err := listGoalsDB(db, anchorID)
 	if err != nil {
 		return domain.AnchorDetail{}, err
@@ -44,11 +48,15 @@ func (s *Store) GetAnchorDetail(anchorID int64) (domain.AnchorDetail, error) {
 	if err != nil {
 		return domain.AnchorDetail{}, err
 	}
+	statusChanges, err := listStatusChangesDB(db, anchorID)
+	if err != nil {
+		return domain.AnchorDetail{}, err
+	}
 	trend, err := anchorTrendDB(db, anchorID, 30)
 	if err != nil {
 		return domain.AnchorDetail{}, err
 	}
-	return domain.AnchorDetail{Anchor: anchor, Sessions: sessions, Reviews: reviews, Issues: issues, Plans: plans, Goals: goals, Events: events, Trend: trend}, nil
+	return domain.AnchorDetail{Anchor: anchor, Sessions: sessions, Reviews: reviews, Issues: issues, Plans: plans, Followups: followups, Goals: goals, Events: events, StatusChanges: statusChanges, Trend: trend}, nil
 }
 
 func (s *Store) GetAnchorTrend(anchorID int64, days int) ([]domain.TrendPoint, error) {
@@ -140,6 +148,10 @@ func (s *Store) GetDashboard(staleDays int) (domain.Dashboard, error) {
 		return domain.Dashboard{}, err
 	}
 	dashboard.ExpiringGoals, err = expiringGoalsDB(db)
+	if err != nil {
+		return domain.Dashboard{}, err
+	}
+	dashboard.StaleAnchors, err = staleAnchorsDB(db, staleDays)
 	if err != nil {
 		return domain.Dashboard{}, err
 	}
@@ -284,6 +296,40 @@ func listPlansDB(db *sql.DB, anchorID int64, status string) ([]domain.Improvemen
 	for rows.Next() {
 		item, err := scanPlan(rows)
 		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func listFollowupsDB(db *sql.DB, anchorID int64) ([]domain.PlanFollowup, error) {
+	rows, err := db.Query(`SELECT id, plan_id, anchor_id, live_session_id, followup_date, execution_status, execution_note, metric_value, metric_change, effect, effect_note, next_action, created_at, updated_at FROM plan_followups WHERE anchor_id = ? ORDER BY followup_date DESC, id DESC LIMIT 500`, anchorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]domain.PlanFollowup, 0)
+	for rows.Next() {
+		item, err := scanFollowup(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func listStatusChangesDB(db *sql.DB, anchorID int64) ([]domain.StatusChange, error) {
+	rows, err := db.Query(`SELECT id, anchor_id, entity_type, entity_id, entity_title, status, changed_at FROM status_history WHERE anchor_id = ? ORDER BY changed_at DESC, id DESC LIMIT 500`, anchorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]domain.StatusChange, 0)
+	for rows.Next() {
+		var item domain.StatusChange
+		if err := rows.Scan(&item.ID, &item.AnchorID, &item.EntityType, &item.EntityID, &item.EntityTitle, &item.Status, &item.ChangedAt); err != nil {
 			return nil, err
 		}
 		items = append(items, item)
@@ -465,6 +511,39 @@ func expiringGoalsDB(db *sql.DB) ([]domain.ExpiringGoal, error) {
 		var item domain.ExpiringGoal
 		if err := rows.Scan(&item.ID, &item.AnchorID, &item.AnchorNickname, &item.Title, &item.EndDate, &item.DaysRemaining); err != nil {
 			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func staleAnchorsDB(db *sql.DB, staleDays int) ([]domain.StaleAnchor, error) {
+	if staleDays <= 0 {
+		staleDays = 3
+	}
+	recentStart := dateDaysAgo(staleDays - 1)
+	rows, err := db.Query(`SELECT a.id, a.nickname, a.stage, a.status,
+        (SELECT MAX(s.session_date) FROM live_sessions s WHERE s.anchor_id = a.id),
+        CAST(julianday(?) - julianday(COALESCE((SELECT MAX(s.session_date) FROM live_sessions s WHERE s.anchor_id = a.id), date(a.created_at))) AS INTEGER)
+        FROM anchors a
+        WHERE a.deleted_at IS NULL AND a.status = '正常开播'
+          AND date(a.created_at) <= ?
+          AND NOT EXISTS (SELECT 1 FROM live_sessions s WHERE s.anchor_id = a.id AND s.session_date >= ?)
+        ORDER BY 6 DESC, a.updated_at DESC, a.id DESC LIMIT 20`, today(), recentStart, recentStart)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]domain.StaleAnchor, 0)
+	for rows.Next() {
+		var item domain.StaleAnchor
+		var lastSession sql.NullString
+		if err := rows.Scan(&item.AnchorID, &item.Nickname, &item.Stage, &item.Status, &lastSession, &item.DaysSinceLive); err != nil {
+			return nil, err
+		}
+		item.LastSessionDate = nullStringPtr(lastSession)
+		if item.DaysSinceLive < 0 {
+			item.DaysSinceLive = 0
 		}
 		items = append(items, item)
 	}

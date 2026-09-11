@@ -29,8 +29,10 @@ export interface AnchorDetail {
     "reviews": OperationReview[] | null;
     "issues": AnchorIssue[] | null;
     "plans": ImprovementPlan[] | null;
+    "followups": PlanFollowup[] | null;
     "goals": StageGoal[] | null;
     "events": AnchorEvent[] | null;
+    "status_changes": StatusChange[] | null;
     "trend": TrendPoint[] | null;
 }
 
@@ -183,6 +185,7 @@ export interface Dashboard {
     "active_plans": PlanSummary[] | null;
     "stale_plans": PlanSummary[] | null;
     "expiring_goals": ExpiringGoal[] | null;
+    "stale_anchors": StaleAnchor[] | null;
     "stale_days": number;
 }
 
@@ -469,6 +472,30 @@ export interface StageGoalInput {
     "description": string;
     "status": string;
     "metrics": GoalMetricInput[] | null;
+}
+
+export interface StaleAnchor {
+    "anchor_id": number;
+    "nickname": string;
+    "stage": string;
+    "status": string;
+    "last_session_date": string | null;
+    "days_since_live": number;
+}
+
+/**
+ * StatusChange is an audit entry used by the anchor timeline. Status history
+ * is recorded by SQLite triggers so changes made through any application use
+ * case are visible without relying on the frontend to remember old values.
+ */
+export interface StatusChange {
+    "id": number;
+    "anchor_id": number;
+    "entity_type": string;
+    "entity_id": number;
+    "entity_title": string;
+    "status": string;
+    "changed_at": string;
 }
 
 export interface TrendPoint {

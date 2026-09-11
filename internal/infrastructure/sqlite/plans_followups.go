@@ -271,6 +271,9 @@ func (s *Store) UpdateFollowup(id int64, input domain.PlanFollowupInput) (domain
 	if err != nil {
 		return domain.PlanFollowup{}, err
 	}
+	if err := followupBelongsToPlanAndAnchor(db, id, input.PlanID, input.AnchorID); err != nil {
+		return domain.PlanFollowup{}, err
+	}
 	baseline, err := planBaseline(db, input.PlanID, input.AnchorID)
 	if err != nil {
 		return domain.PlanFollowup{}, err
@@ -388,6 +391,17 @@ func issueBelongsToAnchor(db *sql.DB, issueID, anchorID int64) error {
 	}
 	if count == 0 {
 		return fmt.Errorf("问题不存在或不属于当前主播")
+	}
+	return nil
+}
+
+func followupBelongsToPlanAndAnchor(db *sql.DB, followupID, planID, anchorID int64) error {
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM plan_followups WHERE id = ? AND plan_id = ? AND anchor_id = ?`, followupID, planID, anchorID).Scan(&count); err != nil {
+		return err
+	}
+	if count == 0 {
+		return fmt.Errorf("方案跟进不存在或不属于当前方案")
 	}
 	return nil
 }

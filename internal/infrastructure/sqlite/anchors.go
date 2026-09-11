@@ -157,9 +157,13 @@ func (s *Store) ListAnchors(filter domain.AnchorFilter) (domain.PageInfo, []doma
         (SELECT MAX(x.activity_date) FROM (
             SELECT s.session_date AS activity_date FROM live_sessions s WHERE s.anchor_id = a.id
             UNION ALL SELECT r.review_date FROM operation_reviews r WHERE r.anchor_id = a.id
-            UNION ALL SELECT i.discovered_at FROM anchor_issues i WHERE i.anchor_id = a.id
-            UNION ALL SELECT p.start_date FROM improvement_plans p WHERE p.anchor_id = a.id
-        ) x) AS last_activity_date,
+             UNION ALL SELECT i.discovered_at FROM anchor_issues i WHERE i.anchor_id = a.id
+             UNION ALL SELECT p.start_date FROM improvement_plans p WHERE p.anchor_id = a.id
+             UNION ALL SELECT f.followup_date FROM plan_followups f WHERE f.anchor_id = a.id
+             UNION ALL SELECT g.start_date FROM stage_goals g WHERE g.anchor_id = a.id
+             UNION ALL SELECT e.event_date FROM anchor_events e WHERE e.anchor_id = a.id
+             UNION ALL SELECT substr(h.changed_at, 1, 10) FROM status_history h WHERE h.anchor_id = a.id
+         ) x) AS last_activity_date,
         COALESCE((SELECT SUM(COALESCE(s.duration_minutes, 0)) FROM live_sessions s WHERE s.anchor_id = a.id AND s.session_date >= ?), 0),
         COALESCE((SELECT SUM(COALESCE(s.revenue_cents, 0)) FROM live_sessions s WHERE s.anchor_id = a.id AND s.session_date >= ?), 0),
         COALESCE((SELECT SUM(COALESCE(s.followers_gained, 0)) FROM live_sessions s WHERE s.anchor_id = a.id AND s.session_date >= ?), 0),
@@ -275,6 +279,10 @@ func anchorOrderBy(filter domain.AnchorFilter) string {
 		return "a.status " + direction + ", a.id DESC"
 	case "recent":
 		return "last_activity_date " + direction + ", a.id DESC"
+	case "revenue":
+		return "last_7_revenue_cents " + direction + ", a.id DESC"
+	case "followers":
+		return "last_7_followers_gained " + direction + ", a.id DESC"
 	default:
 		return `CASE a.attention_level WHEN '紧急' THEN 3 WHEN '重点关注' THEN 2 ELSE 1 END DESC,
             last_activity_date DESC, a.id DESC`
