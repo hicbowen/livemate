@@ -2,7 +2,7 @@ import { create } from 'zustand'
 
 import type { AnchorFilter } from '../bindings/github.com/hicbowen/livemate/internal/domain/models.js'
 
-export type AppView = 'dashboard' | 'anchors' | 'anchor-detail' | 'settings'
+export type AppView = 'dashboard' | 'daily-data' | 'data-import' | 'anchors' | 'anchor-detail' | 'settings'
 
 interface AppState {
   view: AppView

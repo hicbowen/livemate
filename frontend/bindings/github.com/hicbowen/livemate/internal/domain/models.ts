@@ -152,6 +152,15 @@ export interface AnchorPage {
     "items": AnchorListItem[] | null;
 }
 
+export interface AnomalyCandidate {
+    "id": string;
+    "rule": string;
+    "title": string;
+    "evidence": string;
+    "detected_at": string;
+    "related_session_ids": number[] | null;
+}
+
 export interface AppInfo {
     "name": string;
     "project": string;
@@ -169,6 +178,60 @@ export interface BackupExport {
     "path": string;
     "archive_base64": string;
     "exported_at": string;
+}
+
+export interface DailyData {
+    "session_date": string;
+    "rows": DailyDataRow[] | null;
+}
+
+export interface DailyDataInput {
+    "session_date": string;
+    "source": string;
+    "rows": DailySessionInput[] | null;
+}
+
+/**
+ * DailyDataQuery is the compact view used by the daily operations workbench.
+ * It deliberately exposes only the fields that operators enter repeatedly;
+ * the full LiveSession model remains available from the anchor detail page.
+ */
+export interface DailyDataQuery {
+    "session_date": string;
+    "query": string;
+}
+
+export interface DailyDataRow {
+    "anchor_id": number;
+    "nickname": string;
+    "platform": string;
+    "stage": string;
+    "status": string;
+    "session_id": number | null;
+    "duration_minutes": number | null;
+    "views": number | null;
+    "avg_online": number | null;
+    "avg_stay_seconds": number | null;
+    "followers_gained": number | null;
+    "revenue_cents": number | null;
+}
+
+export interface DailyDataSaveResult {
+    "session_date": string;
+    "saved_count": number;
+    "created_count": number;
+    "updated_count": number;
+    "sessions": LiveSession[] | null;
+}
+
+export interface DailySessionInput {
+    "anchor_id": number;
+    "duration_minutes": number | null;
+    "views": number | null;
+    "avg_online": number | null;
+    "avg_stay_seconds": number | null;
+    "followers_gained": number | null;
+    "revenue_cents": number | null;
 }
 
 export interface Dashboard {
@@ -223,6 +286,17 @@ export interface GoalMetricInput {
     "baseline_value": number | null;
     "target_value": number | null;
     "metric_unit": string;
+}
+
+/**
+ * ImportTable is the neutral table shape shared by the spreadsheet parser
+ * and the frontend mapping/validation workflow.
+ */
+export interface ImportTable {
+    "file_name": string;
+    "sheet_name": string;
+    "headers": string[] | null;
+    "rows": (string[] | null)[] | null;
 }
 
 export interface ImprovementPlan {
@@ -373,6 +447,46 @@ export interface PageInfo {
     "total_pages": number;
 }
 
+export interface PeriodComparison {
+    "period_days": number;
+    "previous_start_date": string;
+    "previous_end_date": string;
+    "current_start_date": string;
+    "current_end_date": string;
+    "metrics": PeriodComparisonMetric[] | null;
+}
+
+export interface PeriodComparisonMetric {
+    "metric_name": string;
+    "label": string;
+    "unit": string;
+    "previous_value": number | null;
+    "current_value": number | null;
+    "change_rate": number | null;
+}
+
+/**
+ * PlanEffectComparison compares the last three available sessions before a
+ * plan started with the first three sessions after it started. It is a
+ * compact, factual signal; it does not claim that the plan caused the change.
+ */
+export interface PlanEffectComparison {
+    "plan_id": number;
+    "metric_name": string;
+    "metric_unit": string;
+    "baseline_value": number | null;
+    "target_value": number | null;
+    "current_value": number | null;
+    "current_change": number | null;
+    "current_change_rate": number | null;
+    "before_count": number;
+    "after_count": number;
+    "before_average": number | null;
+    "after_average": number | null;
+    "before_after_change": number | null;
+    "before_after_rate": number | null;
+}
+
 export interface PlanFollowup {
     "id": number;
     "plan_id": number;
@@ -383,6 +497,7 @@ export interface PlanFollowup {
     "execution_note": string;
     "metric_value": number | null;
     "metric_change": number | null;
+    "metric_change_rate": number | null;
     "effect": string;
     "effect_note": string;
     "next_action": string;

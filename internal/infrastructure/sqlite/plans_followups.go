@@ -325,7 +325,14 @@ func (s *Store) getFollowupLocked(id int64) (domain.PlanFollowup, error) {
 	if err != nil {
 		return domain.PlanFollowup{}, err
 	}
-	return scanFollowup(db.QueryRow(`SELECT id, plan_id, anchor_id, live_session_id, followup_date, execution_status, execution_note, metric_value, metric_change, effect, effect_note, next_action, created_at, updated_at FROM plan_followups WHERE id = ?`, id))
+	item, err := scanFollowup(db.QueryRow(`SELECT id, plan_id, anchor_id, live_session_id, followup_date, execution_status, execution_note, metric_value, metric_change, effect, effect_note, next_action, created_at, updated_at FROM plan_followups WHERE id = ?`, id))
+	if err != nil {
+		return domain.PlanFollowup{}, err
+	}
+	if err := setFollowupMetricChangeRate(db, &item); err != nil {
+		return domain.PlanFollowup{}, err
+	}
+	return item, nil
 }
 
 func (s *Store) ListFollowups(planID int64) ([]domain.PlanFollowup, error) {
@@ -348,7 +355,18 @@ func (s *Store) ListFollowups(planID int64) ([]domain.PlanFollowup, error) {
 		}
 		items = append(items, item)
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	for index := range items {
+		if err := setFollowupMetricChangeRate(db, &items[index]); err != nil {
+			return nil, err
+		}
+	}
+	return items, nil
 }
 
 func scanPlan(scanner rowScanner) (domain.ImprovementPlan, error) {
@@ -427,6 +445,24 @@ func metricChange(baseline, value *float64) *float64 {
 	}
 	change := *value - *baseline
 	return &change
+}
+
+func setFollowupMetricChangeRate(db *sql.DB, item *domain.PlanFollowup) error {
+	if item.MetricValue == nil {
+		return nil
+	}
+	var baseline sql.NullFloat64
+	if err := db.QueryRow(`SELECT baseline_value FROM improvement_plans WHERE id = ? AND anchor_id = ?`, item.PlanID, item.AnchorID).Scan(&baseline); err != nil {
+		if err == sql.ErrNoRows {
+			return nil
+		}
+		return err
+	}
+	if !baseline.Valid || baseline.Float64 == 0 {
+		return nil
+	}
+	item.MetricChangeRate = metricRate(&baseline.Float64, item.MetricValue)
+	return nil
 }
 
 func nullFloat64Ptr(value sql.NullFloat64) *float64 {

@@ -115,6 +115,67 @@ type SessionPage struct {
 	Items []LiveSession `json:"items"`
 }
 
+// DailyDataQuery is the compact view used by the daily operations workbench.
+// It deliberately exposes only the fields that operators enter repeatedly;
+// the full LiveSession model remains available from the anchor detail page.
+type DailyDataQuery struct {
+	SessionDate string `json:"session_date"`
+	Query       string `json:"query"`
+}
+
+type DailyDataRow struct {
+	AnchorID        int64  `json:"anchor_id"`
+	Nickname        string `json:"nickname"`
+	Platform        string `json:"platform"`
+	Stage           string `json:"stage"`
+	Status          string `json:"status"`
+	SessionID       *int64 `json:"session_id"`
+	DurationMinutes *int   `json:"duration_minutes"`
+	Views           *int64 `json:"views"`
+	AvgOnline       *int64 `json:"avg_online"`
+	AvgStaySeconds  *int64 `json:"avg_stay_seconds"`
+	FollowersGained *int64 `json:"followers_gained"`
+	RevenueCents    *int64 `json:"revenue_cents"`
+}
+
+type DailyData struct {
+	SessionDate string         `json:"session_date"`
+	Rows        []DailyDataRow `json:"rows"`
+}
+
+type DailySessionInput struct {
+	AnchorID        int64  `json:"anchor_id"`
+	DurationMinutes *int   `json:"duration_minutes"`
+	Views           *int64 `json:"views"`
+	AvgOnline       *int64 `json:"avg_online"`
+	AvgStaySeconds  *int64 `json:"avg_stay_seconds"`
+	FollowersGained *int64 `json:"followers_gained"`
+	RevenueCents    *int64 `json:"revenue_cents"`
+}
+
+type DailyDataInput struct {
+	SessionDate string              `json:"session_date"`
+	Source      string              `json:"source"`
+	Rows        []DailySessionInput `json:"rows"`
+}
+
+type DailyDataSaveResult struct {
+	SessionDate  string        `json:"session_date"`
+	SavedCount   int           `json:"saved_count"`
+	CreatedCount int           `json:"created_count"`
+	UpdatedCount int           `json:"updated_count"`
+	Sessions     []LiveSession `json:"sessions"`
+}
+
+// ImportTable is the neutral table shape shared by the spreadsheet parser
+// and the frontend mapping/validation workflow.
+type ImportTable struct {
+	FileName  string     `json:"file_name"`
+	SheetName string     `json:"sheet_name"`
+	Headers   []string   `json:"headers"`
+	Rows      [][]string `json:"rows"`
+}
+
 type AnchorListItem struct {
 	Anchor
 	LastSessionDate      *string `json:"last_session_date"`
@@ -296,21 +357,42 @@ type ImprovementPlanInput struct {
 	ResultSummary   string   `json:"result_summary"`
 }
 
+// PlanEffectComparison compares the last three available sessions before a
+// plan started with the first three sessions after it started. It is a
+// compact, factual signal; it does not claim that the plan caused the change.
+type PlanEffectComparison struct {
+	PlanID            int64    `json:"plan_id"`
+	MetricName        string   `json:"metric_name"`
+	MetricUnit        string   `json:"metric_unit"`
+	BaselineValue     *float64 `json:"baseline_value"`
+	TargetValue       *float64 `json:"target_value"`
+	CurrentValue      *float64 `json:"current_value"`
+	CurrentChange     *float64 `json:"current_change"`
+	CurrentChangeRate *float64 `json:"current_change_rate"`
+	BeforeCount       int      `json:"before_count"`
+	AfterCount        int      `json:"after_count"`
+	BeforeAverage     *float64 `json:"before_average"`
+	AfterAverage      *float64 `json:"after_average"`
+	BeforeAfterChange *float64 `json:"before_after_change"`
+	BeforeAfterRate   *float64 `json:"before_after_rate"`
+}
+
 type PlanFollowup struct {
-	ID              int64    `json:"id"`
-	PlanID          int64    `json:"plan_id"`
-	AnchorID        int64    `json:"anchor_id"`
-	LiveSessionID   *int64   `json:"live_session_id"`
-	FollowupDate    string   `json:"followup_date"`
-	ExecutionStatus string   `json:"execution_status"`
-	ExecutionNote   string   `json:"execution_note"`
-	MetricValue     *float64 `json:"metric_value"`
-	MetricChange    *float64 `json:"metric_change"`
-	Effect          string   `json:"effect"`
-	EffectNote      string   `json:"effect_note"`
-	NextAction      string   `json:"next_action"`
-	CreatedAt       string   `json:"created_at"`
-	UpdatedAt       string   `json:"updated_at"`
+	ID               int64    `json:"id"`
+	PlanID           int64    `json:"plan_id"`
+	AnchorID         int64    `json:"anchor_id"`
+	LiveSessionID    *int64   `json:"live_session_id"`
+	FollowupDate     string   `json:"followup_date"`
+	ExecutionStatus  string   `json:"execution_status"`
+	ExecutionNote    string   `json:"execution_note"`
+	MetricValue      *float64 `json:"metric_value"`
+	MetricChange     *float64 `json:"metric_change"`
+	MetricChangeRate *float64 `json:"metric_change_rate"`
+	Effect           string   `json:"effect"`
+	EffectNote       string   `json:"effect_note"`
+	NextAction       string   `json:"next_action"`
+	CreatedAt        string   `json:"created_at"`
+	UpdatedAt        string   `json:"updated_at"`
 }
 
 type PlanFollowupInput struct {
@@ -395,6 +477,33 @@ type TrendPoint struct {
 	FollowersGained *int64 `json:"followers_gained"`
 	RevenueCents    *int64 `json:"revenue_cents"`
 	EventCount      int    `json:"event_count"`
+}
+
+type PeriodComparisonMetric struct {
+	MetricName    string   `json:"metric_name"`
+	Label         string   `json:"label"`
+	Unit          string   `json:"unit"`
+	PreviousValue *float64 `json:"previous_value"`
+	CurrentValue  *float64 `json:"current_value"`
+	ChangeRate    *float64 `json:"change_rate"`
+}
+
+type PeriodComparison struct {
+	PeriodDays        int                      `json:"period_days"`
+	PreviousStartDate string                   `json:"previous_start_date"`
+	PreviousEndDate   string                   `json:"previous_end_date"`
+	CurrentStartDate  string                   `json:"current_start_date"`
+	CurrentEndDate    string                   `json:"current_end_date"`
+	Metrics           []PeriodComparisonMetric `json:"metrics"`
+}
+
+type AnomalyCandidate struct {
+	ID                string  `json:"id"`
+	Rule              string  `json:"rule"`
+	Title             string  `json:"title"`
+	Evidence          string  `json:"evidence"`
+	DetectedAt        string  `json:"detected_at"`
+	RelatedSessionIDs []int64 `json:"related_session_ids"`
 }
 
 type AnchorDetail struct {

@@ -100,8 +100,16 @@ export function GetAnchor(id: number): $CancellablePromise<domain$0.Anchor> {
     return $Call.ByID(501128680, id);
 }
 
+export function GetAnchorAnomalies(anchorID: number, days: number): $CancellablePromise<domain$0.AnomalyCandidate[] | null> {
+    return $Call.ByID(1700973429, anchorID, days);
+}
+
 export function GetAnchorDetail(id: number): $CancellablePromise<domain$0.AnchorDetail> {
     return $Call.ByID(3872909513, id);
+}
+
+export function GetAnchorPeriodComparison(anchorID: number, endDate: string, days: number): $CancellablePromise<domain$0.PeriodComparison> {
+    return $Call.ByID(3419355208, anchorID, endDate, days);
 }
 
 export function GetAnchorTrend(anchorID: number, days: number): $CancellablePromise<domain$0.TrendPoint[] | null> {
@@ -110,6 +118,10 @@ export function GetAnchorTrend(anchorID: number, days: number): $CancellableProm
 
 export function GetAnchorTrendRange(anchorID: number, startDate: string, endDate: string): $CancellablePromise<domain$0.TrendPoint[] | null> {
     return $Call.ByID(923967156, anchorID, startDate, endDate);
+}
+
+export function GetDailyData(query: domain$0.DailyDataQuery): $CancellablePromise<domain$0.DailyData> {
+    return $Call.ByID(359829482, query);
 }
 
 export function GetDashboard(staleDays: number): $CancellablePromise<domain$0.Dashboard> {
@@ -134,6 +146,10 @@ export function GetIssue(id: number): $CancellablePromise<domain$0.AnchorIssue> 
 
 export function GetPlan(id: number): $CancellablePromise<domain$0.ImprovementPlan> {
     return $Call.ByID(2424447190, id);
+}
+
+export function GetPlanEffectComparison(planID: number): $CancellablePromise<domain$0.PlanEffectComparison> {
+    return $Call.ByID(1121584346, planID);
 }
 
 export function GetReview(id: number): $CancellablePromise<domain$0.OperationReview> {
@@ -198,6 +214,14 @@ export function OpenDataDirectory(): $CancellablePromise<void> {
 
 export function OpenLogDirectory(): $CancellablePromise<void> {
     return $Call.ByID(2975398258);
+}
+
+export function ParseImportFile(fileName: string, contentBase64: string): $CancellablePromise<domain$0.ImportTable> {
+    return $Call.ByID(140507649, fileName, contentBase64);
+}
+
+export function SaveDailyData(input: domain$0.DailyDataInput): $CancellablePromise<domain$0.DailyDataSaveResult> {
+    return $Call.ByID(199291399, input);
 }
 
 export function Search(query: string): $CancellablePromise<domain$0.SearchResult[] | null> {

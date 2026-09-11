@@ -32,6 +32,8 @@ import type {
 import { arrayOrEmpty, errorMessage, formatDate, formatMetric, formatYuan, optionalInteger, Service } from './api'
 import { useAppStore, type AppView } from './store'
 import { AnchorDetailPage, SettingsPage, type DetailTab } from './detail'
+import { DailyDataPage } from './features/daily-data/DailyDataPage'
+import { DataImportPage } from './features/data-import/DataImportPage'
 import './app.css'
 
 const stages = ['新人', '培养期', '成长期', '稳定期', '核心期', '暂停', '已离开']
@@ -57,7 +59,7 @@ function Badge({ children }: { children: string }) {
   return <AppStatusBadge status={badgeTone(children)} appearance="subtle" size="small" marker="dot">{children}</AppStatusBadge>
 }
 
-type IconName = 'dashboard' | 'anchors' | 'settings'
+type IconName = 'dashboard' | 'daily-data' | 'anchors' | 'settings'
 
 function Icon({ name }: { name: IconName }) {
 	return <span className="rail-icon" aria-hidden="true">
@@ -71,6 +73,10 @@ function Icon({ name }: { name: IconName }) {
 			{ name === 'anchors' && <>
 				<circle cx="10" cy="7" r="2.7" stroke="currentColor" strokeWidth="1.5" />
 				<path d="M4.8 16c.7-2.2 2.5-3.5 5.2-3.5s4.5 1.3 5.2 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+			</> }
+			{ name === 'daily-data' && <>
+				<path d="M4 4.5h12M4 9.5h12M4 14.5h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+				<path d="M7 3v14M12 3v14" stroke="currentColor" strokeWidth="1.2" opacity=".65" />
 			</> }
 			{ name === 'settings' && <>
 				<circle cx="10" cy="10" r="3" stroke="currentColor" strokeWidth="1.5" />
@@ -100,7 +106,7 @@ function Dialog({ open, title, description, onClose, children, actions }: { open
   return <AppDialog open={open} onOpenChange={(next) => { if (!next) onClose() }} title={title} description={description} width={640} closeOnOverlayClick={false} actions={actions}>{children}</AppDialog>
 }
 
-function DashboardPage({ onOpenAnchor }: { onOpenAnchor: (id: number, tab?: DetailTab, targetId?: number) => void }) {
+function DashboardPage({ onOpenAnchor, onOpenDaily }: { onOpenAnchor: (id: number, tab?: DetailTab, targetId?: number) => void; onOpenDaily: () => void }) {
   const [data, setData] = useState<Dashboard | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -123,7 +129,7 @@ function DashboardPage({ onOpenAnchor }: { onOpenAnchor: (id: number, tab?: Deta
   const expiringGoals = arrayOrEmpty(data.expiring_goals)
   const staleAnchors = arrayOrEmpty(data.stale_anchors)
 
-  return <AppPage title="运营首页" description={`${data.today} · 用事实记录，把今天的运营动作排出优先级。`} actions={<AppButton appearance="subtle" onClick={load}>刷新</AppButton>}>
+  return <AppPage title="运营首页" description={`${data.today} · 用事实记录，把今天的运营动作排出优先级。`} actions={<><AppButton appearance="primary" onClick={onOpenDaily}>录入今日数据</AppButton><AppButton appearance="subtle" onClick={load}>刷新</AppButton></>}>
     {error && <ErrorNotice message={error} onDismiss={() => setError('')} />}
     <section className="stat-grid" aria-label="今日概览">
       <StatBlock label="主播总数" value={String(data.anchor_count)} hint={`${data.today_not_live_anchor_count} 位今天未开播`} accent />
@@ -382,7 +388,7 @@ function App() {
 
   const openAnchor = (id: number, tab: DetailTab = 'overview', targetId?: number) => { setDetailNavigation({ tab, targetId }); selectAnchor(id); setRefresh((value) => value + 1) }
   const backToAnchors = () => { selectAnchor(null); setView('anchors') }
-  const activeView: AppView = view === 'anchor-detail' ? 'anchors' : view
+  const activeView: AppView = view === 'anchor-detail' || view === 'data-import' ? (view === 'data-import' ? 'daily-data' : 'anchors') : view
   const toggleMaximise = () => {
     void Window.ToggleMaximise()
       .then(() => Window.IsMaximised())
@@ -404,9 +410,10 @@ function App() {
 			sidebar={{ displayMode: 'auto', collapsible: true }}
 			rail={<AppRail
 				value={activeView}
-				onValueChange={(value) => { if (value === 'dashboard' || value === 'anchors' || value === 'settings') setView(value) }}
+				onValueChange={(value) => { if (value === 'dashboard' || value === 'daily-data' || value === 'anchors' || value === 'settings') setView(value) }}
 				items={[
 					{ key: 'dashboard', label: '运营首页', icon: <Icon name="dashboard" /> },
+					{ key: 'daily-data', label: '每日数据', icon: <Icon name="daily-data" /> },
 					{ key: 'anchors', label: '主播档案', icon: <Icon name="anchors" /> },
 				]}
 				footerItems={[{ key: 'settings', label: '设置', icon: <Icon name="settings" /> }]}
@@ -414,7 +421,9 @@ function App() {
 		>
 			<div className="app-content-stack">
 				<GlobalSearch onOpenAnchor={openAnchor} />
-				{view === 'dashboard' && <DashboardPage onOpenAnchor={openAnchor} />}
+				{view === 'dashboard' && <DashboardPage onOpenAnchor={openAnchor} onOpenDaily={() => setView('daily-data')} />}
+				{view === 'daily-data' && <DailyDataPage onOpenAnchor={openAnchor} onOpenImport={() => setView('data-import')} />}
+				{view === 'data-import' && <DataImportPage onBack={() => setView('daily-data')} />}
 				{view === 'anchors' && <AnchorsPage onOpenAnchor={openAnchor} />}
         {view === 'anchor-detail' && selectedAnchorId && <AnchorDetailPage anchorId={selectedAnchorId} refreshKey={refresh} initialTab={detailNavigation.tab} targetId={detailNavigation.targetId} onBack={backToAnchors} />}
 				{view === 'settings' && <SettingsPage />}

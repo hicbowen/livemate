@@ -317,7 +317,18 @@ func listFollowupsDB(db *sql.DB, anchorID int64) ([]domain.PlanFollowup, error) 
 		}
 		items = append(items, item)
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	for index := range items {
+		if err := setFollowupMetricChangeRate(db, &items[index]); err != nil {
+			return nil, err
+		}
+	}
+	return items, nil
 }
 
 func listStatusChangesDB(db *sql.DB, anchorID int64) ([]domain.StatusChange, error) {

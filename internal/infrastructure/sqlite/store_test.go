@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"encoding/base64"
+	"fmt"
 	"math"
 	"path/filepath"
 	"testing"
@@ -194,6 +195,94 @@ func TestSessionHistoryIsPagedAndPersistsAcrossReopen(t *testing.T) {
 	}
 }
 
+func TestDailyDataUpsertAndAtomicBatch(t *testing.T) {
+	store := testStore(t)
+	anchorA := testAnchor(t, store, "小鱼")
+	anchorB := testAnchor(t, store, "小雨")
+	date := "2026-09-12"
+
+	daily, err := store.GetDailyData(domain.DailyDataQuery{SessionDate: date})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if daily.SessionDate != date || len(daily.Rows) != 2 || daily.Rows[0].SessionID != nil || daily.Rows[1].SessionID != nil {
+		t.Fatalf("initial daily rows = %#v", daily)
+	}
+
+	result, err := store.SaveDailyData(domain.DailyDataInput{SessionDate: date, Rows: []domain.DailySessionInput{
+		{AnchorID: anchorA.ID, DurationMinutes: intp(120), Views: int64p(1000), AvgOnline: int64p(80), AvgStaySeconds: int64p(42), FollowersGained: int64p(12), RevenueCents: int64p(12345)},
+		{AnchorID: anchorB.ID},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.SavedCount != 1 || result.CreatedCount != 1 || result.UpdatedCount != 0 || len(result.Sessions) != 1 {
+		t.Fatalf("daily save result = %#v", result)
+	}
+	if result.Sessions[0].Source != "每日数据" || result.Sessions[0].DurationMinutes == nil || *result.Sessions[0].DurationMinutes != 120 {
+		t.Fatalf("daily-created session = %#v", result.Sessions[0])
+	}
+
+	updated, err := store.SaveDailyData(domain.DailyDataInput{SessionDate: date, Rows: []domain.DailySessionInput{{AnchorID: anchorA.ID, Views: int64p(1200)}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.SavedCount != 1 || updated.CreatedCount != 0 || updated.UpdatedCount != 1 || updated.Sessions[0].Views == nil || *updated.Sessions[0].Views != 1200 {
+		t.Fatalf("daily-update result = %#v", updated)
+	}
+	var sessionCount int
+	if err := store.db.QueryRow(`SELECT COUNT(*) FROM live_sessions WHERE anchor_id = ? AND session_date = ?`, anchorA.ID, date).Scan(&sessionCount); err != nil {
+		t.Fatal(err)
+	}
+	if sessionCount != 1 {
+		t.Fatalf("daily upsert created duplicate session count = %d", sessionCount)
+	}
+	imported, err := store.SaveDailyData(domain.DailyDataInput{SessionDate: "2026-09-14", Source: "文件导入", Rows: []domain.DailySessionInput{{AnchorID: anchorB.ID, FollowersGained: int64p(-3)}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(imported.Sessions) != 1 || imported.Sessions[0].Source != "文件导入" || imported.Sessions[0].FollowersGained == nil || *imported.Sessions[0].FollowersGained != -3 {
+		t.Fatalf("imported daily session = %#v", imported)
+	}
+
+	if _, err := store.SaveDailyData(domain.DailyDataInput{SessionDate: "2026-09-13", Rows: []domain.DailySessionInput{
+		{AnchorID: anchorA.ID, Views: int64p(10)},
+		{AnchorID: anchorB.ID, AvgOnline: int64p(-1)},
+	}}); err == nil {
+		t.Fatal("negative batch value should fail")
+	}
+	if err := store.db.QueryRow(`SELECT COUNT(*) FROM live_sessions WHERE session_date = '2026-09-13'`).Scan(&sessionCount); err != nil {
+		t.Fatal(err)
+	}
+	if sessionCount != 0 {
+		t.Fatalf("failed batch was partially committed: %d sessions", sessionCount)
+	}
+
+	filtered, err := store.GetDailyData(domain.DailyDataQuery{SessionDate: date, Query: "小雨"})
+	if err != nil || len(filtered.Rows) != 1 || filtered.Rows[0].AnchorID != anchorB.ID {
+		t.Fatalf("filtered daily rows = %#v err=%v", filtered, err)
+	}
+}
+
+func TestDailyDataPreservesDetailedSessionContext(t *testing.T) {
+	store := testStore(t)
+	anchor := testAnchor(t, store, "上下文主播")
+	created, err := store.CreateSession(domain.LiveSessionInput{
+		AnchorID: anchor.ID, SessionDate: "2026-09-12", DurationMinutes: intp(90), DurationOverride: true,
+		PeakOnline: int64p(321), OperatorName: "运营甲", Source: "平台后台", Notes: "保留这段上下文",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := store.SaveDailyData(domain.DailyDataInput{SessionDate: "2026-09-12", Rows: []domain.DailySessionInput{{AnchorID: anchor.ID, AvgOnline: int64p(88)}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(updated.Sessions) != 1 || updated.Sessions[0].ID != created.ID || updated.Sessions[0].PeakOnline == nil || *updated.Sessions[0].PeakOnline != 321 || updated.Sessions[0].OperatorName != "运营甲" || updated.Sessions[0].Source != "平台后台" || updated.Sessions[0].Notes != "保留这段上下文" {
+		t.Fatalf("daily update erased detailed context: %#v", updated.Sessions)
+	}
+}
+
 func TestOneIssueMultiplePlansAndIndependentFollowups(t *testing.T) {
 	store := testStore(t)
 	anchor := testAnchor(t, store, "小鱼")
@@ -223,6 +312,9 @@ func TestOneIssueMultiplePlansAndIndependentFollowups(t *testing.T) {
 	if followup1.MetricChange == nil || math.Abs(*followup1.MetricChange-3) > 0.001 {
 		t.Fatalf("metric change = %#v, want 3", followup1.MetricChange)
 	}
+	if followup1.MetricChangeRate == nil || math.Abs(*followup1.MetricChangeRate-(3.0/42.0)) > 0.000001 {
+		t.Fatalf("metric change rate = %#v, want 3/42", followup1.MetricChangeRate)
+	}
 	if _, err := store.AddFollowup(domain.PlanFollowupInput{PlanID: planA.ID, AnchorID: anchor.ID, FollowupDate: "2026-09-11", ExecutionStatus: "完整执行", MetricValue: floatp(53), Effect: "有效", NextAction: "继续"}); err != nil {
 		t.Fatal(err)
 	}
@@ -248,6 +340,128 @@ func TestOneIssueMultiplePlansAndIndependentFollowups(t *testing.T) {
 	}
 	if _, err := store.GetPlan(planA.ID); err != nil {
 		t.Fatalf("deleting followup deleted plan: %v", err)
+	}
+}
+
+func TestPlanEffectComparisonUsesThreeSessionsOnEachSide(t *testing.T) {
+	store := testStore(t)
+	anchor := testAnchor(t, store, "效果对比主播")
+	for _, item := range []struct {
+		date string
+		stay int64
+	}{
+		{"2026-09-07", 40}, {"2026-09-08", 42}, {"2026-09-09", 44},
+		{"2026-09-10", 50}, {"2026-09-11", 55}, {"2026-09-12", 58},
+	} {
+		if _, err := store.CreateSession(domain.LiveSessionInput{AnchorID: anchor.ID, SessionDate: item.date, AvgStaySeconds: int64p(item.stay)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	review, err := store.CreateReview(domain.OperationReviewInput{AnchorID: anchor.ID, ReviewDate: "2026-09-09"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	issue, err := store.CreateIssue(domain.AnchorIssueInput{AnchorID: anchor.ID, ReviewID: int64p(review.ID), Title: "留存问题", Category: "留存", Priority: "重点"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := store.CreatePlan(domain.ImprovementPlanInput{AnchorID: anchor.ID, IssueID: issue.ID, Title: "调整承接", MetricName: "avg_stay_seconds", MetricUnit: "秒", BaselineValue: floatp(42), TargetValue: floatp(60), StartDate: "2026-09-10", Status: "执行中"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AddFollowup(domain.PlanFollowupInput{PlanID: plan.ID, AnchorID: anchor.ID, FollowupDate: "2026-09-12", MetricValue: floatp(58), Effect: "部分有效", NextAction: "继续观察"}); err != nil {
+		t.Fatal(err)
+	}
+	comparison, err := store.GetPlanEffectComparison(plan.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if comparison.BeforeCount != 3 || comparison.AfterCount != 3 || comparison.BeforeAverage == nil || comparison.AfterAverage == nil {
+		t.Fatalf("comparison windows = %#v", comparison)
+	}
+	if math.Abs(*comparison.BeforeAverage-42) > 0.001 || math.Abs(*comparison.AfterAverage-(163.0/3.0)) > 0.001 {
+		t.Fatalf("comparison averages = %#v", comparison)
+	}
+	if comparison.CurrentValue == nil || comparison.CurrentChange == nil || math.Abs(*comparison.CurrentChange-16) > 0.001 {
+		t.Fatalf("comparison current value = %#v", comparison)
+	}
+}
+
+func TestAnchorPeriodComparisonUsesAdjacentCalendarWindows(t *testing.T) {
+	store := testStore(t)
+	anchor := testAnchor(t, store, "周期对比主播")
+	if _, err := store.CreateSession(domain.LiveSessionInput{AnchorID: anchor.ID, SessionDate: "2026-09-01", DurationMinutes: intp(60), DurationOverride: true, AvgOnline: int64p(38), AvgStaySeconds: int64p(41), FollowersGained: int64p(18), RevenueCents: int64p(42000)}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreateSession(domain.LiveSessionInput{AnchorID: anchor.ID, SessionDate: "2026-09-08", DurationMinutes: intp(60), DurationOverride: true, AvgOnline: int64p(46), AvgStaySeconds: int64p(53), FollowersGained: int64p(27), RevenueCents: int64p(48600)}); err != nil {
+		t.Fatal(err)
+	}
+	comparison, err := store.GetAnchorPeriodComparison(anchor.ID, "2026-09-14", 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if comparison.PreviousStartDate != "2026-09-01" || comparison.PreviousEndDate != "2026-09-07" || comparison.CurrentStartDate != "2026-09-08" || comparison.CurrentEndDate != "2026-09-14" {
+		t.Fatalf("period dates = %#v", comparison)
+	}
+	if len(comparison.Metrics) != 4 {
+		t.Fatalf("period metrics = %#v", comparison.Metrics)
+	}
+	if comparison.Metrics[0].CurrentValue == nil || *comparison.Metrics[0].CurrentValue != 46 || comparison.Metrics[0].ChangeRate == nil || math.Abs(*comparison.Metrics[0].ChangeRate-(8.0/38.0)) > 0.000001 {
+		t.Fatalf("average online comparison = %#v", comparison.Metrics[0])
+	}
+	if comparison.Metrics[3].CurrentValue == nil || math.Abs(*comparison.Metrics[3].CurrentValue-486) > 0.001 {
+		t.Fatalf("revenue/hour comparison = %#v", comparison.Metrics[3])
+	}
+}
+
+func TestAnchorAnomaliesAreConservativeRuleCandidates(t *testing.T) {
+	store := testStore(t)
+	anchor := testAnchor(t, store, "异常规则主播")
+	for _, item := range []struct {
+		date    string
+		online  int64
+		stay    int64
+		revenue int64
+	}{
+		{"2026-09-07", 50, 50, 500000},
+		{"2026-09-08", 40, 50, 500000},
+		{"2026-09-09", 30, 50, 500000},
+		{"2026-09-10", 20, 20, 100000},
+	} {
+		if _, err := store.CreateSession(domain.LiveSessionInput{AnchorID: anchor.ID, SessionDate: item.date, AvgOnline: int64p(item.online), AvgStaySeconds: int64p(item.stay), RevenueCents: int64p(item.revenue)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	anomalies, err := store.GetAnchorAnomalies(anchor.ID, 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(anomalies) != 3 {
+		t.Fatalf("anomalies = %#v", anomalies)
+	}
+	for _, anomaly := range anomalies {
+		if anomaly.Title == "主播表现差" || anomaly.DetectedAt == "" || len(anomaly.RelatedSessionIDs) < 3 {
+			t.Fatalf("anomaly should remain a contextual candidate: %#v", anomaly)
+		}
+	}
+}
+
+func TestNegativeFollowerAnomalyIsAllowedAndContextual(t *testing.T) {
+	store := testStore(t)
+	anchor := testAnchor(t, store, "负涨粉主播")
+	for index, followers := range []int64{-3, -5, -2} {
+		if _, err := store.CreateSession(domain.LiveSessionInput{
+			AnchorID: anchor.ID, SessionDate: fmt.Sprintf("2026-09-%02d", 7+index), FollowersGained: int64p(followers),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	anomalies, err := store.GetAnchorAnomalies(anchor.ID, 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(anomalies) != 1 || anomalies[0].ID != "followers-negative" || len(anomalies[0].RelatedSessionIDs) != 3 {
+		t.Fatalf("negative follower anomaly = %#v", anomalies)
 	}
 }
 

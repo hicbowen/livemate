@@ -15,6 +15,7 @@ import {
 import { AppDataTable, AppDataView, type AppDataTableColumn } from 'react-desktop-shell/data'
 
 import type {
+  AnomalyCandidate,
   AnchorDetail,
   AnchorEvent,
   AnchorEventInput,
@@ -27,8 +28,10 @@ import type {
   LiveSessionInput,
   OperationReview,
   OperationReviewInput,
+  PlanEffectComparison,
   PlanFollowup,
   PlanFollowupInput,
+  PeriodComparison,
   StageGoal,
   StageGoalInput,
   StatusChange,
@@ -174,7 +177,24 @@ function sessionToDraft(session: LiveSession | null): SessionDraft {
 }
 
 function copiedSessionToDraft(session: LiveSession): SessionDraft {
-  return { ...sessionToDraft(session), session_date: today(), started_at: '', ended_at: '', duration_minutes: '', duration_override: false, followers_before: '', followers_after: '', followers_gained: '', is_abnormal: false, abnormal_note: '', notes: '' }
+  return {
+    ...sessionToDraft(session),
+    session_date: today(),
+    started_at: '',
+    ended_at: '',
+    duration_minutes: '',
+    duration_override: false,
+    views: '',
+    avg_online: '',
+    avg_stay_seconds: '',
+    followers_before: '',
+    followers_after: '',
+    followers_gained: '',
+    revenue_yuan: '',
+    is_abnormal: false,
+    abnormal_note: '',
+    notes: '',
+  }
 }
 
 function sessionDraftToInput(anchorId: number, draft: SessionDraft): LiveSessionInput {
@@ -214,36 +234,39 @@ function NumberField({ label, value, onChange, description }: { label: string; v
   return <AppField label={label} description={description}><AppTextBox type="number" min="0" step="any" value={value} onChange={(event) => onChange(event.target.value)} /></AppField>
 }
 
-function SessionFormDialog({ open, anchorId, initial, copyOf, onClose, onSaved }: { open: boolean; anchorId: number; initial: LiveSession | null; copyOf: LiveSession | null; onClose: () => void; onSaved: () => void }) {
+function SessionFormDialog({ open, anchorId, initial, copyOf, onClose, onSaved }: { open: boolean; anchorId: number; initial: LiveSession | null; copyOf: LiveSession | null; onClose: () => void; onSaved: (continueEntry?: boolean) => void }) {
   const [draft, setDraft] = useState<SessionDraft>(emptySessionDraft)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [continueEntry, setContinueEntry] = useState(false)
   useEffect(() => { setDraft(copyOf ? copiedSessionToDraft(copyOf) : sessionToDraft(initial)); setError('') }, [copyOf, initial, open])
   const update = <K extends keyof SessionDraft>(key: K, value: SessionDraft[K]) => setDraft((current) => ({ ...current, [key]: value }))
   const save = (event: FormEvent) => {
     event.preventDefault()
     setSaving(true)
     setError('')
+    const keepOpen = continueEntry && !initial
+    setContinueEntry(false)
     const request = initial ? Service.UpdateSession(initial.id, sessionDraftToInput(anchorId, draft)) : Service.CreateSession(sessionDraftToInput(anchorId, draft))
-    request.then(() => onSaved()).catch((reason) => setError(errorMessage(reason))).finally(() => setSaving(false))
+    request.then(() => onSaved(keepOpen)).catch((reason) => setError(errorMessage(reason))).finally(() => setSaving(false))
   }
-  return <Dialog open={open} title={initial ? '编辑直播记录' : copyOf ? '复制上一场直播' : '新增直播记录'} description={copyOf ? '已带入上一场的部分指标，请核对后再保存；日期、时间和本场增量数据已清空。' : '只填你现在掌握的事实；未知指标留空，播伴不会把未知当成 0。'} onClose={onClose} width={820} actions={<><AppButton appearance="subtle" onClick={onClose}>取消</AppButton><AppButton appearance="primary" type="submit" form="session-form" loading={saving}>{initial ? '保存记录' : '保存直播'}</AppButton></>}>
+  return <Dialog open={open} title={initial ? '编辑直播记录' : copyOf ? '复制上一场直播' : '新增直播记录'} description={copyOf ? '已带入上一场的低频字段，请核对后再保存；日期和本场高频数据已清空。' : '先填本场高频数据；未知指标留空，播伴不会把未知当成 0。'} onClose={onClose} width={820} actions={<><AppButton appearance="subtle" onClick={onClose}>取消</AppButton>{!initial && <AppButton appearance="standard" type="submit" form="session-form" onClick={() => setContinueEntry(true)} loading={saving}>保存并继续</AppButton>}<AppButton appearance="primary" type="submit" form="session-form" onClick={() => setContinueEntry(false)} loading={saving}>{initial ? '保存记录' : '保存并关闭'}</AppButton></>}>
     <form id="session-form" className="form-grid" onSubmit={save}>
       <FormError message={error} />
       <AppField label="直播日期" required><AppTextBox type="date" value={draft.session_date} onChange={(event) => update('session_date', event.target.value)} autoFocus /></AppField>
-      <AppField label="数据来源"><AppTextBox value={draft.source} onChange={(event) => update('source', event.target.value)} placeholder="手工录入 / 平台后台" /></AppField>
-      <AppField label="开播时间"><AppTextBox type="datetime-local" value={draft.started_at} onChange={(event) => update('started_at', event.target.value)} /></AppField>
-      <AppField label="下播时间"><AppTextBox type="datetime-local" value={draft.ended_at} onChange={(event) => update('ended_at', event.target.value)} /></AppField>
-      <div className="form-span-2 form-check-row"><label><input type="checkbox" checked={draft.duration_override} onChange={(event) => update('duration_override', event.target.checked)} /> 手工覆盖直播时长</label><span className="form-help">有开播/下播时间时默认自动计算。</span></div>
       <NumberField label="直播时长（分钟）" value={draft.duration_minutes} onChange={(value) => update('duration_minutes', value)} />
       <NumberField label="场观" value={draft.views} onChange={(value) => update('views', value)} />
       <NumberField label="平均在线" value={draft.avg_online} onChange={(value) => update('avg_online', value)} />
       <NumberField label="平均停留（秒）" value={draft.avg_stay_seconds} onChange={(value) => update('avg_stay_seconds', value)} />
-      <NumberField label="开播前粉丝" value={draft.followers_before} onChange={(value) => update('followers_before', value)} description="填写前后值后自动计算新增粉丝。" />
-      <NumberField label="下播后粉丝" value={draft.followers_after} onChange={(value) => update('followers_after', value)} />
       <NumberField label="新增粉丝" value={draft.followers_gained} onChange={(value) => update('followers_gained', value)} description="前后粉丝都填写时以差值为准。" />
       <NumberField label="流水（元）" value={draft.revenue_yuan} onChange={(value) => update('revenue_yuan', value)} />
       <details className="form-span-2 session-more"><summary>更多数据</summary><div className="form-grid session-more-grid">
+        <AppField label="数据来源"><AppTextBox value={draft.source} onChange={(event) => update('source', event.target.value)} placeholder="手工录入 / 平台后台" /></AppField>
+        <AppField label="开播时间"><AppTextBox type="datetime-local" value={draft.started_at} onChange={(event) => update('started_at', event.target.value)} /></AppField>
+        <AppField label="下播时间"><AppTextBox type="datetime-local" value={draft.ended_at} onChange={(event) => update('ended_at', event.target.value)} /></AppField>
+        <div className="form-span-2 form-check-row"><label><input type="checkbox" checked={draft.duration_override} onChange={(event) => update('duration_override', event.target.checked)} /> 手工覆盖直播时长</label><span className="form-help">有开播/下播时间时默认自动计算。</span></div>
+        <NumberField label="开播前粉丝" value={draft.followers_before} onChange={(value) => update('followers_before', value)} description="填写前后值后自动计算新增粉丝。" />
+        <NumberField label="下播后粉丝" value={draft.followers_after} onChange={(value) => update('followers_after', value)} />
         <NumberField label="最高在线" value={draft.peak_online} onChange={(value) => update('peak_online', value)} />
         <NumberField label="点赞" value={draft.likes} onChange={(value) => update('likes', value)} />
         <NumberField label="评论" value={draft.comments} onChange={(value) => update('comments', value)} />
@@ -528,6 +551,24 @@ function SessionMetrics({ session }: { session: LiveSession }) {
   return <div className="metric-inline-grid"><MetricValue label="平均在线" value={formatMetric(session.avg_online, 0)} /><MetricValue label="平均停留" value={formatMetric(session.avg_stay_seconds, 0)} suffix={session.avg_stay_seconds === null ? '' : ' 秒'} /><MetricValue label="新增粉丝" value={formatMetric(session.followers_gained, 0)} /><MetricValue label="流水" value={formatYuan(session.revenue_cents)} /><MetricValue label="人均付费率" value={formatPercent(session.metrics.payer_rate)} /></div>
 }
 
+function AnomalyPanel({ anomalies, onConvert }: { anomalies: AnomalyCandidate[]; onConvert: (candidate: AnomalyCandidate) => Promise<void> }) {
+  const [hidden, setHidden] = useState<Record<string, string>>({})
+  const [converting, setConverting] = useState('')
+  const visible = anomalies.filter((candidate) => !hidden[candidate.id])
+  if (visible.length === 0) return null
+  const hide = (candidate: AnomalyCandidate, action: string) => setHidden((current) => ({ ...current, [candidate.id]: action }))
+  const convert = async (candidate: AnomalyCandidate) => {
+    setConverting(candidate.id)
+    try {
+      await onConvert(candidate)
+      hide(candidate, '已转为问题')
+    } finally {
+      setConverting('')
+    }
+  }
+  return <section className="content-section anomaly-panel"><div className="section-heading"><div><h2>可能异常</h2><p>规则只提示数据变化，不代表已经确认原因。</p></div><span className="section-count warning-count">{visible.length}</span></div><div className="anomaly-list">{visible.map((candidate) => <AppCard key={candidate.id} className="anomaly-row"><div className="anomaly-row-main"><div className="row-title"><strong>{candidate.title}</strong><Badge>提示</Badge></div><p>{candidate.evidence}</p><small>检测于 {formatDate(candidate.detected_at)} · 规则：{candidate.rule}</small></div><div className="row-actions"><AppButton size="compact" appearance="subtle" onClick={() => hide(candidate, '已忽略')}>忽略</AppButton><AppButton size="compact" appearance="subtle" onClick={() => hide(candidate, '继续观察')}>继续观察</AppButton><AppButton size="compact" appearance="primary" loading={converting === candidate.id} onClick={() => void convert(candidate)}>转为问题</AppButton></div></AppCard>)}</div></section>
+}
+
 function TrendTable({ trend }: { trend: TrendPoint[] }) {
   const columns = useMemo<AppDataTableColumn<TrendPoint>[]>(() => [
     { accessorKey: 'date', header: '日期', size: 120, cell: ({ row }) => formatDate(row.original.date) },
@@ -584,21 +625,33 @@ function dateAgo(days: number): string {
   return localDate(date)
 }
 
+function periodMetricValue(metric: NonNullable<PeriodComparison['metrics']>[number], value: number | null): string {
+  if (value === null || value === undefined) return '—'
+  if (metric.metric_name === 'revenue_per_hour') return `¥${value.toLocaleString('zh-CN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+  return `${formatMetric(value, metric.metric_name === 'avg_stay_seconds' ? 0 : 1)}${metric.unit ? ` ${metric.unit}` : ''}`
+}
+
+function PeriodComparisonPanel({ comparison }: { comparison: PeriodComparison }) {
+  return <div className="period-comparison"><div className="period-comparison-heading"><div><strong>周期对比</strong><span>最近 {comparison.period_days} 天 vs 前 {comparison.period_days} 天</span></div><small>{formatDate(comparison.previous_start_date)}—{formatDate(comparison.previous_end_date)} · {formatDate(comparison.current_start_date)}—{formatDate(comparison.current_end_date)}</small></div><div className="period-comparison-table"><div className="period-comparison-row period-comparison-header"><span>指标</span><span>上周期</span><span>本周期</span><span>变化</span></div>{arrayOrEmpty(comparison.metrics).map((metric) => <div className="period-comparison-row" key={metric.metric_name}><strong>{metric.label}</strong><span>{periodMetricValue(metric, metric.previous_value)}</span><span>{periodMetricValue(metric, metric.current_value)}</span><span className={metric.change_rate !== null && metric.change_rate >= 0 ? 'metric-positive' : 'metric-negative'}>{metric.change_rate === null ? '—' : `${metric.change_rate >= 0 ? '+' : ''}${formatPercent(metric.change_rate)}`}</span></div>)}</div><p className="muted-copy">对比只描述数据变化；事件、方案和其他上下文仍需结合时间线判断。</p></div>
+}
+
 function TrendPanel({ anchorId, initialTrend }: { anchorId: number; initialTrend: TrendPoint[] }) {
-  const [range, setRange] = useState<'7' | '30' | 'custom'>('30')
+  const [range, setRange] = useState<'7' | '14' | '30' | 'custom'>('30')
   const [startDate, setStartDate] = useState(dateAgo(29))
   const [endDate, setEndDate] = useState(today())
   const [trend, setTrend] = useState(initialTrend)
+  const [comparison, setComparison] = useState<PeriodComparison | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   useEffect(() => {
     let alive = true
     setLoading(true); setError('')
     const request = range === 'custom' ? Service.GetAnchorTrendRange(anchorId, startDate, endDate) : Service.GetAnchorTrend(anchorId, Number(range))
-    request.then((result) => { if (alive) setTrend(arrayOrEmpty(result)) }).catch((reason) => { if (alive) setError(errorMessage(reason)) }).finally(() => { if (alive) setLoading(false) })
+    const comparisonRequest = range === '14' ? Service.GetAnchorPeriodComparison(anchorId, endDate, 7) : Promise.resolve(null)
+    Promise.all([request, comparisonRequest]).then(([result, period]) => { if (alive) { setTrend(arrayOrEmpty(result)); setComparison(period) } }).catch((reason) => { if (alive) setError(errorMessage(reason)) }).finally(() => { if (alive) setLoading(false) })
     return () => { alive = false }
   }, [anchorId, endDate, range, startDate])
-  return <section className="content-section"><div className="section-heading"><div><h2>趋势</h2><p>按日期聚合；空值会保持为空，不会伪造连续数据。</p></div><div className="trend-controls"><div className="range-buttons" role="group" aria-label="趋势范围"><button type="button" className={range === '7' ? 'is-active' : ''} onClick={() => setRange('7')}>7 天</button><button type="button" className={range === '30' ? 'is-active' : ''} onClick={() => setRange('30')}>30 天</button><button type="button" className={range === 'custom' ? 'is-active' : ''} onClick={() => setRange('custom')}>自定义</button></div>{range === 'custom' && <div className="date-range"><AppTextBox type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /><span>至</span><AppTextBox type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} /></div>}</div></div>{error && <FormError message={error} />}{loading ? <div className="loading-state compact-loading">正在读取趋势…</div> : <><TrendChart trend={trend} /><TrendTable trend={trend} /></>}</section>
+  return <section className="content-section"><div className="section-heading"><div><h2>趋势</h2><p>按日期聚合；空值会保持为空，不会伪造连续数据。</p></div><div className="trend-controls"><div className="range-buttons" role="group" aria-label="趋势范围"><button type="button" className={range === '7' ? 'is-active' : ''} onClick={() => setRange('7')}>7 天</button><button type="button" className={range === '14' ? 'is-active' : ''} onClick={() => setRange('14')}>14 天对比</button><button type="button" className={range === '30' ? 'is-active' : ''} onClick={() => setRange('30')}>30 天</button><button type="button" className={range === 'custom' ? 'is-active' : ''} onClick={() => setRange('custom')}>自定义</button></div>{range === 'custom' && <div className="date-range"><AppTextBox type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /><span>至</span><AppTextBox type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} /></div>}</div></div>{error && <FormError message={error} />}{loading ? <div className="loading-state compact-loading">正在读取趋势…</div> : <><TrendChart trend={trend} />{comparison && <PeriodComparisonPanel comparison={comparison} />}<TrendTable trend={trend} /></>}</section>
 }
 
 type TimelineKind = '直播' | '复盘' | '问题' | '方案' | '跟进' | '目标' | '事件' | '状态'
@@ -624,13 +677,15 @@ function Timeline({ detail, onEditEvent, onDeleteEvent }: { detail: AnchorDetail
 
 function PlanFollowups({ plan, sessions, refreshToken, onAdd, onEdit, onRefresh }: { plan: ImprovementPlan; sessions: LiveSession[]; refreshToken: number; onAdd: () => void; onEdit: (followup: PlanFollowup) => void; onRefresh: () => void }) {
   const [followups, setFollowups] = useState<PlanFollowup[]>([])
+  const [comparison, setComparison] = useState<PlanEffectComparison | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const load = () => { setLoading(true); setError(''); Service.ListFollowups(plan.id).then((result) => setFollowups(arrayOrEmpty(result))).catch((reason) => setError(errorMessage(reason))).finally(() => setLoading(false)) }
+  const load = () => { setLoading(true); setError(''); Promise.all([Service.ListFollowups(plan.id), Service.GetPlanEffectComparison(plan.id)]).then(([result, effect]) => { setFollowups(arrayOrEmpty(result)); setComparison(effect) }).catch((reason) => setError(errorMessage(reason))).finally(() => setLoading(false)) }
   useEffect(() => { load() }, [plan.id, refreshToken])
   const changeStatus = (status: string) => { Service.ChangePlanStatus(plan.id, status).then(() => { load(); onRefresh() }).catch((reason) => setError(errorMessage(reason))) }
   const remove = (followup: PlanFollowup) => { if (!window.confirm(`确认删除 ${formatDate(followup.followup_date)} 的跟进记录？`)) return; Service.DeleteFollowup(followup.id).then(() => { load(); onRefresh() }).catch((reason) => setError(errorMessage(reason))) }
-  return <div className="plan-panel"><div className="plan-panel-header"><div><strong>方案跟进</strong><span>{plan.followup_count} 条记录 · 最近 {formatDate(plan.last_followup_date)}</span></div><div className="plan-panel-actions"><AppSelect options={options(planStatuses)} value={plan.status} onValueChange={(value) => { if (value && value !== plan.status) changeStatus(value) }} /><AppButton size="compact" appearance="primary" onClick={onAdd}>+ 新增跟进</AppButton></div></div>{error && <FormError message={error} />}{loading ? <div className="loading-state compact-loading">正在读取跟进…</div> : followups.length === 0 ? <Empty title="还没有跟进记录" description="完成一次动作后，回来记录执行情况和下一步。" action={<AppButton size="compact" appearance="primary" onClick={onAdd}>记录第一次跟进</AppButton>} /> : <div className="followup-list">{followups.map((followup) => <div className="followup-row" key={followup.id}><div className="followup-date">{formatDate(followup.followup_date)}</div><div className="row-main"><div className="row-title"><Badge>{followup.execution_status}</Badge><Badge>{followup.effect}</Badge>{followup.metric_value !== null && <span className="metric-inline">指标 {formatMetric(followup.metric_value)}</span>}{followup.metric_change !== null && <span className={`metric-inline${followup.metric_change >= 0 ? ' metric-positive' : ' metric-negative'}`}>相对基线 {followup.metric_change >= 0 ? '+' : ''}{formatMetric(followup.metric_change)}</span>}</div><p>{followup.execution_note || '未填写执行记录'}</p><small>下一步：{followup.next_action} · {followup.effect_note || '暂无效果说明'}</small></div><div className="row-actions"><AppButton size="compact" appearance="subtle" onClick={() => onEdit(followup)}>编辑</AppButton><AppButton size="compact" appearance="subtle" onClick={() => remove(followup)}>删除</AppButton></div></div>)}</div>}</div>
+  const displayMetric = (value: number | null | undefined) => value === null || value === undefined ? '—' : plan.metric_name === 'revenue_cents' ? formatYuan(Math.round(value)) : `${formatMetric(value)}${plan.metric_unit ? ` ${plan.metric_unit}` : ''}`
+  return <div className="plan-panel"><div className="plan-panel-header"><div><strong>方案跟进</strong><span>{plan.followup_count} 条记录 · 最近 {formatDate(plan.last_followup_date)}</span></div><div className="plan-panel-actions"><AppSelect options={options(planStatuses)} value={plan.status} onValueChange={(value) => { if (value && value !== plan.status) changeStatus(value) }} /><AppButton size="compact" appearance="primary" onClick={onAdd}>+ 新增跟进</AppButton></div></div>{error && <FormError message={error} />}{loading ? <div className="loading-state compact-loading">正在读取跟进…</div> : <>{comparison && comparison.metric_name && (comparison.before_count > 0 || comparison.after_count > 0 || comparison.current_value !== null) && <div className="plan-effect-comparison"><div className="plan-effect-heading"><div><strong>方案前后效果对比</strong><span>实施前最近 3 场 vs 实施后最早 3 场</span></div><small>变化用于辅助判断，不自动等同于因果。</small></div><div className="plan-effect-grid"><div><span>实施前（{comparison.before_count} 场）</span><strong>{displayMetric(comparison.before_average)}</strong></div><div><span>实施后（{comparison.after_count} 场）</span><strong>{displayMetric(comparison.after_average)}</strong></div><div><span>前后变化</span><strong className={comparison.before_after_change !== null && comparison.before_after_change >= 0 ? 'metric-positive' : 'metric-negative'}>{comparison.before_after_change === null ? '—' : `${comparison.before_after_change >= 0 ? '+' : ''}${formatMetric(comparison.before_after_change)}${comparison.before_after_rate === null ? '' : `（${comparison.before_after_rate >= 0 ? '+' : ''}${formatPercent(comparison.before_after_rate)}）`}`}</strong></div><div><span>最近跟进值</span><strong>{displayMetric(comparison.current_value)}</strong></div></div></div>}{followups.length === 0 ? <Empty title="还没有跟进记录" description="完成一次动作后，回来记录执行情况和下一步。" action={<AppButton size="compact" appearance="primary" onClick={onAdd}>记录第一次跟进</AppButton>} /> : <div className="followup-list">{followups.map((followup) => <div className="followup-row" key={followup.id}><div className="followup-date">{formatDate(followup.followup_date)}</div><div className="row-main"><div className="row-title"><Badge>{followup.execution_status}</Badge><Badge>{followup.effect}</Badge>{followup.metric_value !== null && <span className="metric-inline">指标 {formatMetric(followup.metric_value)}</span>}{followup.metric_change !== null && <span className={`metric-inline${followup.metric_change >= 0 ? ' metric-positive' : ' metric-negative'}`}>相对基线 {followup.metric_change >= 0 ? '+' : ''}{formatMetric(followup.metric_change)}{followup.metric_change_rate !== null && <small>（{followup.metric_change_rate >= 0 ? '+' : ''}{formatPercent(followup.metric_change_rate)}）</small>}</span>}</div><p>{followup.execution_note || '未填写执行记录'}</p><small>下一步：{followup.next_action} · {followup.effect_note || '暂无效果说明'}</small></div><div className="row-actions"><AppButton size="compact" appearance="subtle" onClick={() => onEdit(followup)}>编辑</AppButton><AppButton size="compact" appearance="subtle" onClick={() => remove(followup)}>删除</AppButton></div></div>)}</div>}</>}</div>
 }
 
 export type DetailTab = 'overview' | 'sessions' | 'reviews' | 'issues' | 'plans' | 'goals' | 'timeline'
@@ -659,9 +714,15 @@ export function AnchorDetailPage({ anchorId, refreshKey, initialTab = 'overview'
   const [viewingIssue, setViewingIssue] = useState<AnchorIssue | null>(null)
   const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null)
   const [selectedGoalId, setSelectedGoalId] = useState<number | null>(null)
+  const [anomalies, setAnomalies] = useState<AnomalyCandidate[]>([])
 
   const load = () => { setLoading(true); setError(''); Service.GetAnchorDetail(anchorId).then(setDetail).catch((reason) => setError(errorMessage(reason))).finally(() => setLoading(false)) }
   useEffect(() => { load() }, [anchorId, refreshKey, revision])
+  useEffect(() => {
+    let alive = true
+    Service.GetAnchorAnomalies(anchorId, 30).then((items) => { if (alive) setAnomalies(arrayOrEmpty(items)) }).catch((reason) => { if (alive) setError(errorMessage(reason)) })
+    return () => { alive = false }
+  }, [anchorId, refreshKey, revision])
   useEffect(() => { if (detail && selectedPlanId !== null && !arrayOrEmpty(detail.plans).some((plan) => plan.id === selectedPlanId)) setSelectedPlanId(null) }, [detail, selectedPlanId])
   useEffect(() => {
     if (!detail) return
@@ -682,7 +743,7 @@ export function AnchorDetailPage({ anchorId, refreshKey, initialTab = 'overview'
   const activeIssues = issues.filter((issue) => issue.status !== '已解决' && issue.status !== '已关闭')
   const activePlans = plans.filter((plan) => !['已验证有效', '无效', '已终止'].includes(plan.status))
   const opened = (next: DetailDialog) => { setDialog(next); setError('') }
-  const saved = () => { setDialog(null); setEditingSession(null); setCopyingSession(null); setRevision((value) => value + 1) }
+  const saved = (continueEntry = false) => { if (!continueEntry) setDialog(null); setEditingSession(null); setCopyingSession(null); setRevision((value) => value + 1) }
   const openSession = (session: LiveSession | null = null) => { setCopyingSession(null); setEditingSession(session); opened('session') }
   const openSessionCopy = (session: LiveSession) => { setEditingSession(null); setCopyingSession(session); opened('session') }
   const openSessionDetail = (session: LiveSession) => { setViewingSession(session); opened('session-detail') }
@@ -694,6 +755,12 @@ export function AnchorDetailPage({ anchorId, refreshKey, initialTab = 'overview'
   const openGoal = (goal: StageGoal | null = null) => { setEditingGoal(goal); opened('goal') }
   const openEvent = (event: AnchorEvent | null = null) => { setEditingEvent(event); opened('event') }
   const removeEvent = (event: AnchorEvent) => { if (!window.confirm(`确认删除事件“${event.title}”？`)) return; Service.DeleteEvent(event.id).then(() => setRevision((value) => value + 1)).catch((reason) => setError(errorMessage(reason))) }
+  const convertAnomaly = async (candidate: AnomalyCandidate) => {
+		const category = candidate.id === 'avg-stay-drop' ? '留存' : candidate.id === 'revenue-drop' ? '流水' : candidate.id === 'followers-negative' ? '涨粉' : '互动'
+    await Service.CreateIssue({ anchor_id: anchorId, review_id: null, title: candidate.title, category, description: '由规则提示生成，待运营补充事实背景和原因判断。', evidence: candidate.evidence, cause_hypothesis: '待运营判断；当前只表示数据变化，不代表已确认因果。', priority: '普通', status: '待处理', discovered_at: candidate.detected_at })
+    setAnomalies((current) => current.filter((item) => item.id !== candidate.id))
+    load()
+  }
 
   if (loading && !detail) return <AppPage title="主播详情" description="正在读取主播档案…" actions={<AppButton appearance="subtle" onClick={onBack}>‹ 返回主播档案</AppButton>}><div className="detail-loading"><div className="loading-state">正在读取主播档案…</div></div></AppPage>
   if (!detail) return <AppPage title="主播详情" description="主播档案无法读取。" actions={<><AppButton appearance="subtle" onClick={onBack}>‹ 返回主播档案</AppButton><AppButton appearance="subtle" onClick={load}>重试</AppButton></>}><FormError message={error || '主播不存在或已归档。'} /></AppPage>
@@ -704,7 +771,7 @@ export function AnchorDetailPage({ anchorId, refreshKey, initialTab = 'overview'
     <div className="detail-header"><div className="detail-avatar">{anchor.nickname.slice(0, 1)}</div><div className="detail-meta"><div className="detail-name-row"><h1>{anchor.nickname}</h1><Badge>{anchor.stage}</Badge><Badge>{anchor.attention_level}</Badge><Badge>{anchor.status}</Badge></div><p>{anchor.name || '未填写真实姓名'} · {anchor.operator_name || '未指定运营负责人'} · UID {anchor.platform_uid || '未填写'}</p><div className="pill-list">{arrayOrEmpty(anchor.tags).map((tag) => <span className="tag-chip" key={tag}>{tag}</span>)}</div></div><div className="detail-actions"><AppButton appearance="primary" onClick={() => openSession()}>+ 新增直播</AppButton><AppButton appearance="standard" onClick={() => openReview()}>+ 新增复盘</AppButton><AppButton appearance="subtle" onClick={() => openEvent()}>记录事件</AppButton></div></div>
     <div className="detail-tabs" role="tablist">{tabs.map((item) => <button className={`tab-button${tab === item.key ? ' is-active' : ''}`} role="tab" aria-selected={tab === item.key} key={item.key} onClick={() => setTab(item.key)}>{item.label}{item.count !== undefined && <span>{item.count}</span>}</button>)}</div>
     {error && <div className="notice notice-error"><span>{error}</span><button className="notice-dismiss" onClick={() => setError('')} aria-label="关闭错误">×</button></div>}
-    {tab === 'overview' && <Overview anchorId={anchorId} detail={detail} onOpenIssue={() => setTab('issues')} onOpenPlan={() => setTab('plans')} onOpenGoal={() => setTab('goals')} onOpenSession={() => openSession()} />}
+    {tab === 'overview' && <Overview anchorId={anchorId} detail={detail} anomalies={anomalies} onConvertAnomaly={convertAnomaly} onOpenIssue={() => setTab('issues')} onOpenPlan={() => setTab('plans')} onOpenGoal={() => setTab('goals')} onOpenSession={() => openSession()} />}
     {tab === 'sessions' && <SessionsTab anchorId={anchorId} refreshToken={revision} sessions={sessions} onCreate={() => openSession()} onEdit={openSession} onCopy={openSessionCopy} onView={openSessionDetail} onCreateReview={(sessionId) => openReview(null, sessionId)} onDelete={(id) => { if (!window.confirm('确认删除这条直播记录？存在关联复盘、跟进或事件时不能删除。')) return; Service.DeleteSession(id).then(() => setRevision((value) => value + 1)).catch((reason) => setError(errorMessage(reason))) }} />}
     {tab === 'reviews' && <ReviewsTab reviews={reviews} issues={issues} onCreate={() => openReview()} onEdit={openReview} onCreateIssue={(reviewId) => openIssue(null, reviewId)} onViewIssue={openIssueDetail} />}
     {tab === 'issues' && <IssuesTab issues={issues} onCreate={() => openIssue()} onEdit={openIssue} onView={openIssueDetail} onCreatePlan={(issueId) => openPlan(null, issueId)} onChangeStatus={(id, status) => Service.ChangeIssueStatus(id, status).then(() => setRevision((value) => value + 1)).catch((reason) => setError(errorMessage(reason)))} />}
@@ -723,7 +790,7 @@ export function AnchorDetailPage({ anchorId, refreshKey, initialTab = 'overview'
   </AppPage>
 }
 
-function Overview({ anchorId, detail, onOpenIssue, onOpenPlan, onOpenGoal, onOpenSession }: { anchorId: number; detail: AnchorDetail; onOpenIssue: () => void; onOpenPlan: () => void; onOpenGoal: () => void; onOpenSession: () => void }) {
+function Overview({ anchorId, detail, anomalies, onConvertAnomaly, onOpenIssue, onOpenPlan, onOpenGoal, onOpenSession }: { anchorId: number; detail: AnchorDetail; anomalies: AnomalyCandidate[]; onConvertAnomaly: (candidate: AnomalyCandidate) => Promise<void>; onOpenIssue: () => void; onOpenPlan: () => void; onOpenGoal: () => void; onOpenSession: () => void }) {
   const sessions = arrayOrEmpty(detail.sessions)
   const issues = arrayOrEmpty(detail.issues)
   const plans = arrayOrEmpty(detail.plans)
@@ -732,7 +799,7 @@ function Overview({ anchorId, detail, onOpenIssue, onOpenPlan, onOpenGoal, onOpe
   const openIssues = issues.filter((issue) => issue.status !== '已解决' && issue.status !== '已关闭')
   const activePlans = plans.filter((plan) => !['已验证有效', '无效', '已终止'].includes(plan.status))
   const currentGoal = goals.find((goal) => goal.status === '进行中')
-  return <div className="detail-section"><div className="detail-grid"><AppCard className="summary-panel"><div className="panel-heading"><div><h2>最近直播</h2><p>{latest ? formatDate(latest.session_date) : '暂无直播记录'}</p></div><AppButton size="compact" appearance="subtle" onClick={onOpenSession}>+ 记录</AppButton></div>{latest ? <><SessionMetrics session={latest} /><div className="panel-note">{latest.is_abnormal ? `异常：${latest.abnormal_note || '请补充异常说明'}` : latest.notes || '本场暂无补充备注'}</div></> : <Empty title="还没有直播记录" description="先记下一场直播，播伴会开始计算可用指标。" action={<AppButton size="compact" appearance="primary" onClick={onOpenSession}>新增直播</AppButton>} />}</AppCard><AppCard className="summary-panel"><div className="panel-heading"><div><h2>待推进事项</h2><p>问题和方案需要下一次动作。</p></div></div><div className="summary-list"><button onClick={onOpenIssue}><strong>{openIssues.length}</strong><span>个待处理问题</span><b>›</b></button><button onClick={onOpenPlan}><strong>{activePlans.length}</strong><span>个执行中方案</span><b>›</b></button><button onClick={onOpenGoal}><strong>{currentGoal ? 1 : 0}</strong><span>个进行中目标</span><b>›</b></button></div></AppCard></div><TrendPanel anchorId={anchorId} initialTrend={arrayOrEmpty(detail.trend)} /><section className="content-section"><div className="section-heading"><div><h2>最近活动</h2><p>快速查看最近发生的直播和运营变化。</p></div></div><Timeline detail={detail} /></section></div>
+  return <div className="detail-section"><AnomalyPanel anomalies={anomalies} onConvert={onConvertAnomaly} /><div className="detail-grid"><AppCard className="summary-panel"><div className="panel-heading"><div><h2>最近直播</h2><p>{latest ? formatDate(latest.session_date) : '暂无直播记录'}</p></div><AppButton size="compact" appearance="subtle" onClick={onOpenSession}>+ 记录</AppButton></div>{latest ? <><SessionMetrics session={latest} /><div className="panel-note">{latest.is_abnormal ? `异常：${latest.abnormal_note || '请补充异常说明'}` : latest.notes || '本场暂无补充备注'}</div></> : <Empty title="还没有直播记录" description="先记下一场直播，播伴会开始计算可用指标。" action={<AppButton size="compact" appearance="primary" onClick={onOpenSession}>新增直播</AppButton>} />}</AppCard><AppCard className="summary-panel"><div className="panel-heading"><div><h2>待推进事项</h2><p>问题和方案需要下一次动作。</p></div></div><div className="summary-list"><button onClick={onOpenIssue}><strong>{openIssues.length}</strong><span>个待处理问题</span><b>›</b></button><button onClick={onOpenPlan}><strong>{activePlans.length}</strong><span>个执行中方案</span><b>›</b></button><button onClick={onOpenGoal}><strong>{currentGoal ? 1 : 0}</strong><span>个进行中目标</span><b>›</b></button></div></AppCard></div><TrendPanel anchorId={anchorId} initialTrend={arrayOrEmpty(detail.trend)} /><section className="content-section"><div className="section-heading"><div><h2>最近活动</h2><p>快速查看最近发生的直播和运营变化。</p></div></div><Timeline detail={detail} /></section></div>
 }
 
 function SessionsTab({ anchorId, refreshToken, sessions, onCreate, onEdit, onCopy, onView, onCreateReview, onDelete }: { anchorId: number; refreshToken: number; sessions: LiveSession[]; onCreate: () => void; onEdit: (session: LiveSession) => void; onCopy: (session: LiveSession) => void; onView: (session: LiveSession) => void; onCreateReview: (sessionId: number) => void; onDelete: (id: number) => void }) {

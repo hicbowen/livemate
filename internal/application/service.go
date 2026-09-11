@@ -50,6 +50,15 @@ func (s *Service) ListSessions(anchorID int64) ([]domain.LiveSession, error) {
 func (s *Service) ListSessionPage(filter domain.SessionFilter) (domain.SessionPage, error) {
 	return s.store.ListSessionPage(filter)
 }
+func (s *Service) GetDailyData(query domain.DailyDataQuery) (domain.DailyData, error) {
+	return s.store.GetDailyData(query)
+}
+func (s *Service) SaveDailyData(input domain.DailyDataInput) (domain.DailyDataSaveResult, error) {
+	return s.store.SaveDailyData(input)
+}
+func (s *Service) ParseImportFile(fileName, contentBase64 string) (domain.ImportTable, error) {
+	return parseImportFile(fileName, contentBase64)
+}
 func (s *Service) GetSession(id int64) (domain.LiveSession, error) { return s.store.GetSession(id) }
 func (s *Service) CreateSession(input domain.LiveSessionInput) (domain.LiveSession, error) {
 	return s.store.CreateSession(input)
@@ -63,6 +72,12 @@ func (s *Service) GetAnchorTrend(anchorID int64, days int) ([]domain.TrendPoint,
 }
 func (s *Service) GetAnchorTrendRange(anchorID int64, startDate, endDate string) ([]domain.TrendPoint, error) {
 	return s.store.GetAnchorTrendRange(anchorID, startDate, endDate)
+}
+func (s *Service) GetAnchorPeriodComparison(anchorID int64, endDate string, days int) (domain.PeriodComparison, error) {
+	return s.store.GetAnchorPeriodComparison(anchorID, endDate, days)
+}
+func (s *Service) GetAnchorAnomalies(anchorID int64, days int) ([]domain.AnomalyCandidate, error) {
+	return s.store.GetAnchorAnomalies(anchorID, days)
 }
 
 func (s *Service) ListReviews(anchorID int64) ([]domain.OperationReview, error) {
@@ -104,6 +119,9 @@ func (s *Service) ChangePlanStatus(id int64, status string) (domain.ImprovementP
 	return s.store.ChangePlanStatus(id, status)
 }
 func (s *Service) DeletePlan(id int64) error { return s.store.DeletePlan(id) }
+func (s *Service) GetPlanEffectComparison(planID int64) (domain.PlanEffectComparison, error) {
+	return s.store.GetPlanEffectComparison(planID)
+}
 func (s *Service) ListFollowups(planID int64) ([]domain.PlanFollowup, error) {
 	return s.store.ListFollowups(planID)
 }
