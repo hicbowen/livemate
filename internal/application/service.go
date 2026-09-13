@@ -3,21 +3,33 @@ package application
 import (
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/hicbowen/livemate/internal/domain"
 	"github.com/hicbowen/livemate/internal/infrastructure/sqlite"
 	"github.com/hicbowen/livemate/internal/platform"
+	"github.com/wailsapp/wails/v3/pkg/services/notifications"
 )
 
 // Service contains application use cases. The Wails bridge delegates to this
 // type, keeping the UI unaware of SQLite and keeping business writes ordered:
 // Go -> SQLite -> fresh query -> Zustand.
 type Service struct {
-	store *sqlite.Store
+	store                  *sqlite.Store
+	notifier               *notifications.NotificationService
+	reminderMu             sync.Mutex
+	scheduledTodoReminders map[string]struct{}
 }
 
-func NewService(store *sqlite.Store) *Service {
-	return &Service{store: store}
+func NewService(store *sqlite.Store, notifier ...*notifications.NotificationService) *Service {
+	service := &Service{
+		store:                  store,
+		scheduledTodoReminders: make(map[string]struct{}),
+	}
+	if len(notifier) > 0 {
+		service.notifier = notifier[0]
+	}
+	return service
 }
 
 func (s *Service) AppInfo() domain.AppInfo { return s.store.AppInfo() }
@@ -56,6 +68,9 @@ func (s *Service) GetDailyData(query domain.DailyDataQuery) (domain.DailyData, e
 func (s *Service) SaveDailyData(input domain.DailyDataInput) (domain.DailyDataSaveResult, error) {
 	return s.store.SaveDailyData(input)
 }
+func (s *Service) ImportDailyData(input domain.DailyDataBatchInput) (domain.DailyDataBatchSaveResult, error) {
+	return s.store.ImportDailyData(input)
+}
 func (s *Service) ParseImportFile(fileName, contentBase64 string) (domain.ImportTable, error) {
 	return parseImportFile(fileName, contentBase64)
 }
@@ -78,6 +93,9 @@ func (s *Service) GetAnchorPeriodComparison(anchorID int64, endDate string, days
 }
 func (s *Service) GetAnchorAnomalies(anchorID int64, days int) ([]domain.AnomalyCandidate, error) {
 	return s.store.GetAnchorAnomalies(anchorID, days)
+}
+func (s *Service) SetAnomalyDecision(input domain.AnomalyDecisionInput) error {
+	return s.store.SetAnomalyDecision(input)
 }
 
 func (s *Service) ListReviews(anchorID int64) ([]domain.OperationReview, error) {
@@ -165,6 +183,17 @@ func (s *Service) GetDashboard(staleDays int) (domain.Dashboard, error) {
 }
 func (s *Service) Search(query string) ([]domain.SearchResult, error) {
 	return s.store.Search(strings.TrimSpace(query))
+}
+
+func (s *Service) GetTodoTasks(date string) ([]domain.TodoTask, error) {
+	return s.store.GetTodoTasks(date)
+}
+
+func (s *Service) SaveTodoTasks(date string, tasks []domain.TodoTask) error {
+	if err := s.store.ReplaceTodoTasks(date, tasks); err != nil {
+		return err
+	}
+	return s.reconcileTodoStartReminders()
 }
 
 func (s *Service) ExportBackup() (domain.BackupExport, error) {

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AppButton, AppCard, AppPage } from 'react-desktop-shell'
+import { ArrowUploadRegular } from '@fluentui/react-icons'
 
 import type {
   Anchor,
@@ -180,7 +181,7 @@ function parseRevenue(value: string): number | null {
 function anchorMatches(anchors: Anchor[], value: string): Anchor[] {
   const key = compact(value)
   if (!key) return []
-  return anchors.filter((anchor) => [anchor.nickname, anchor.name, anchor.account_name].some((candidate) => compact(candidate) === key))
+  return anchors.filter((anchor) => [anchor.nickname, anchor.name, anchor.account_name, anchor.platform_uid].some((candidate) => compact(candidate) === key))
 }
 
 function cellFor(row: string[], mapping: ImportMapping, key: ImportFieldKey): string {
@@ -210,10 +211,26 @@ export function DataImportPage({ onBack }: { onBack: () => void }) {
   const [message, setMessage] = useState('')
 
   useEffect(() => {
-    Service.ListAnchors({ query: '', stage: '', status: '', attention_level: '', tag: '', page: 1, page_size: 500, sort_by: 'nickname', sort_desc: false })
-      .then((page) => setAnchors(arrayOrEmpty(page.items)))
-      .catch((reason) => setAnchorError(errorMessage(reason)))
-      .finally(() => setLoadingAnchors(false))
+    let alive = true
+    const filter = { query: '', stage: '', status: '', attention_level: '', tag: '', page: 1, page_size: 200, sort_by: 'nickname', sort_desc: false }
+    const loadAnchors = async () => {
+      try {
+        const first = await Service.ListAnchors(filter)
+        const pages = [arrayOrEmpty(first.items)]
+        const totalPages = first.page?.total_pages ?? 1
+        if (totalPages > 1) {
+          const rest = await Promise.all(Array.from({ length: totalPages - 1 }, (_, index) => Service.ListAnchors({ ...filter, page: index + 2 })))
+          pages.push(...rest.map((page) => arrayOrEmpty(page.items)))
+        }
+        if (alive) setAnchors(pages.flat())
+      } catch (reason) {
+        if (alive) setAnchorError(errorMessage(reason))
+      } finally {
+        if (alive) setLoadingAnchors(false)
+      }
+    }
+    void loadAnchors()
+    return () => { alive = false }
   }, [])
 
   const previewRows = useMemo<PreviewRow[]>(() => {
@@ -323,13 +340,15 @@ export function DataImportPage({ onBack }: { onBack: () => void }) {
       let total = 0
       let created = 0
       let updated = 0
+      const batches: Array<{ session_date: string; source: string; rows: DailySessionInput[] }> = []
       for (const [date, rows] of grouped) {
         if (rows.length > 500) throw new Error(`${date} 超过单日 500 行限制，请拆分文件后再导入。`)
-        const result = await Service.SaveDailyData({ session_date: date, source: '文件导入', rows })
-        total += result.saved_count
-        created += result.created_count
-        updated += result.updated_count
+        batches.push({ session_date: date, source: '文件导入', rows })
       }
+      const result = await Service.ImportDailyData({ source: '文件导入', batches })
+      total = result.saved_count
+      created = result.created_count
+      updated = result.updated_count
       setMessage(formatChangeCount(total, created, updated, errorRows.length))
     } catch (reason) {
       setError(errorMessage(reason))
@@ -338,11 +357,11 @@ export function DataImportPage({ onBack }: { onBack: () => void }) {
     }
   }
 
-  return <AppPage title="数据导入" description="先预览、映射和校验，再把 CSV / TSV / XLSX 数据写入直播场次。" actions={<><AppButton appearance="subtle" onClick={onBack}>返回每日数据</AppButton><label className="button-like"><span>选择 CSV / Excel</span><input type="file" accept=".csv,.tsv,.txt,.xlsx,text/csv,text/tab-separated-values,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void readFile(file); event.currentTarget.value = '' }} /></label><AppButton appearance="primary" onClick={() => void importRows()} loading={busy} disabled={!importable}>确认导入</AppButton></>}>
+  return <AppPage title="数据导入" description="先预览、映射和校验，再把 CSV / TSV / XLSX 数据写入直播场次。" actions={<><AppButton appearance="subtle" onClick={onBack}>返回每日数据</AppButton><label className="button-like"><ArrowUploadRegular aria-hidden="true" fontSize={16} /><span>选择 CSV / Excel</span><input type="file" accept=".csv,.tsv,.txt,.xlsx,text/csv,text/tab-separated-values,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void readFile(file); event.currentTarget.value = '' }} /></label><AppButton appearance="primary" icon={<ArrowUploadRegular aria-hidden="true" fontSize={16} />} onClick={() => void importRows()} loading={busy} disabled={!importable}>确认导入</AppButton></>}>
     {anchorError && <div className="notice notice-error">主播名单读取失败：{anchorError}</div>}
     {error && <div className="notice notice-error" role="alert">{error}</div>}
     {message && <div className="notice notice-success">{message}</div>}
-    {!table ? <AppCard className="import-empty"><div className="import-empty-icon">↥</div><h2>选择平台导出的文件</h2><p>支持 UTF-8 / GB18030 编码的 CSV、TSV，以及标准 XLSX；文件第一行作为表头，日期和主播列是必需映射。</p></AppCard> : <>
+    {!table ? <AppCard className="import-empty"><div className="import-empty-icon"><ArrowUploadRegular aria-hidden="true" fontSize={24} /></div><h2>选择平台导出的文件</h2><p>支持 UTF-8 / GB18030 编码的 CSV、TSV，以及标准 XLSX；文件第一行作为表头，日期和主播列是必需映射。</p></AppCard> : <>
       <section className="content-section import-file-summary"><div><strong>{fileName}</strong><span>{table.rows.length} 行 · {table.headers.length} 列 · {table.delimiter === 'xlsx' ? `工作表：${table.sheetName || '第一张工作表'}` : `分隔符：${table.delimiter === '\t' ? 'Tab' : table.delimiter}`}</span></div><span>{loadingAnchors ? '正在读取主播名单…' : `在册主播 ${anchors.length} 位`}</span></section>
       <AppCard className="import-mapping-card"><div className="section-heading"><div><h2>字段映射</h2><p>系统会按常见平台字段自动匹配，你可以逐项调整。</p></div><span className={missingMapping.length > 0 ? 'mapping-state is-warning' : 'mapping-state'}>{missingMapping.length > 0 ? `缺少：${missingMapping.join('、')}` : '必需字段已完成'}</span></div><div className="import-mapping-grid">{fieldDefinitions.map((field) => <label key={field.key} className="import-mapping-field"><span>{field.label}{field.required ? ' *' : ''}</span><select className="import-select" value={mapping[field.key]} onChange={(event) => updateMapping(field.key, event.target.value)}><option value="">不导入</option>{table.headers.map((header, index) => <option key={`${header}-${index}`} value={String(index)}>{header || `未命名列 ${index + 1}`}</option>)}</select></label>)}</div></AppCard>
       <AppCard className="import-preview-card"><div className="section-heading"><div><h2>数据预览</h2><p>通过校验的行会被导入；异常行会显示原因并在确认时跳过。</p></div><div className="import-preview-count"><strong>{validRows.length}</strong> / {previewRows.length} 行可导入</div></div>{missingMapping.length > 0 ? <div className="import-help">请先完成：{missingMapping.join('、')}。</div> : previewRows.length === 0 ? <div className="import-help">文件中没有数据行。</div> : <div className="import-preview-table-wrap"><table className="import-preview-table"><thead><tr><th>行</th><th>主播</th><th>日期</th><th>时长</th><th>场观</th><th>平均在线</th><th>停留</th><th>新增粉丝</th><th>流水</th><th>校验</th></tr></thead><tbody>{previewRows.slice(0, 100).map((row) => <tr key={row.rowNumber} className={row.error ? 'is-invalid' : 'is-valid'}><td>{row.rowNumber}</td><td>{row.anchorText || '—'}</td><td>{row.date || '—'}</td><td>{formatMetric(row.input?.duration_minutes, 0)}</td><td>{formatMetric(row.input?.views, 0)}</td><td>{formatMetric(row.input?.avg_online, 0)}</td><td>{formatMetric(row.input?.avg_stay_seconds, 0)}{row.input?.avg_stay_seconds === null || row.input?.avg_stay_seconds === undefined ? '' : ' 秒'}</td><td>{formatMetric(row.input?.followers_gained, 0)}</td><td>{formatYuan(row.input?.revenue_cents)}</td><td>{row.error ? <span className="import-error-text">{row.error}</span> : <span className="import-ok-text">通过</span>}</td></tr>)}</tbody></table>{previewRows.length > 100 && <p className="import-help">仅展示前 100 行，导入会处理全部 {previewRows.length} 行。</p>}</div>}</AppCard>

@@ -160,8 +160,16 @@ export function GetSession(id: number): $CancellablePromise<domain$0.LiveSession
     return $Call.ByID(851877387, id);
 }
 
+export function GetTodoTasks(date: string): $CancellablePromise<domain$0.TodoTask[] | null> {
+    return $Call.ByID(3258793849, date);
+}
+
 export function ImportBackup(archiveBase64: string): $CancellablePromise<void> {
     return $Call.ByID(675150872, archiveBase64);
+}
+
+export function ImportDailyData(input: domain$0.DailyDataBatchInput): $CancellablePromise<domain$0.DailyDataBatchSaveResult> {
+    return $Call.ByID(2967918899, input);
 }
 
 export function ListAnchors(filter: domain$0.AnchorFilter): $CancellablePromise<domain$0.AnchorPage> {
@@ -224,8 +232,16 @@ export function SaveDailyData(input: domain$0.DailyDataInput): $CancellablePromi
     return $Call.ByID(199291399, input);
 }
 
+export function SaveTodoTasks(date: string, tasks: domain$0.TodoTask[] | null): $CancellablePromise<void> {
+    return $Call.ByID(3932907196, date, tasks);
+}
+
 export function Search(query: string): $CancellablePromise<domain$0.SearchResult[] | null> {
     return $Call.ByID(1372877855, query);
+}
+
+export function SetAnomalyDecision(input: domain$0.AnomalyDecisionInput): $CancellablePromise<void> {
+    return $Call.ByID(4048836392, input);
 }
 
 export function UpdateAnchor(id: number, input: domain$0.AnchorInput): $CancellablePromise<domain$0.Anchor> {

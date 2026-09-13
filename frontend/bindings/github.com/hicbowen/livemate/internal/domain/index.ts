@@ -13,9 +13,12 @@ export type {
     AnchorListItem,
     AnchorPage,
     AnomalyCandidate,
+    AnomalyDecisionInput,
     AppInfo,
     BackupExport,
     DailyData,
+    DailyDataBatchInput,
+    DailyDataBatchSaveResult,
     DailyDataInput,
     DailyDataQuery,
     DailyDataRow,
@@ -49,5 +52,6 @@ export type {
     StageGoalInput,
     StaleAnchor,
     StatusChange,
+    TodoTask,
     TrendPoint
 } from "./models.js";

@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { AppButton, AppCard, AppPage, AppSearchBox } from 'react-desktop-shell'
+import { AppButton, AppCard, AppDatePicker, AppInlineEdit, AppPage, AppSearchBox } from 'react-desktop-shell'
+import type { AppInlineEditHandle } from 'react-desktop-shell'
+import dayjs from 'dayjs'
 
 import type {
   DailyDataRow,
@@ -7,6 +9,7 @@ import type {
   DailySessionInput,
 } from '../../../bindings/github.com/hicbowen/livemate/internal/domain/models.js'
 import { errorMessage, optionalInteger, Service } from '../../api'
+import { appDateToDayjs, dayjsToAppDate } from '../../utils/desktopShellDateTime'
 
 type DailyColumnKey = 'duration_minutes' | 'views' | 'avg_online' | 'avg_stay_seconds' | 'followers_gained' | 'revenue_yuan'
 
@@ -65,17 +68,35 @@ function hasData(draft: DailyDraft): boolean {
   return columns.some(({ key }) => draft[key].trim() !== '')
 }
 
+const clearFieldByColumn: Record<DailyColumnKey, string> = {
+  duration_minutes: 'duration_minutes',
+  views: 'views',
+  avg_online: 'avg_online',
+  avg_stay_seconds: 'avg_stay_seconds',
+  followers_gained: 'followers_gained',
+  revenue_yuan: 'revenue_cents',
+}
+
+function existingValue(row: DailyDataRow, key: DailyColumnKey): number | null | undefined {
+  if (key === 'revenue_yuan') return row.revenue_cents
+  return row[key]
+}
+
+function clearFieldsFor(row: DailyDataRow, draft: DailyDraft): string[] {
+  return columns
+    .filter(({ key }) => existingValue(row, key) !== null && existingValue(row, key) !== undefined && draft[key].trim() === '')
+    .map(({ key }) => clearFieldByColumn[key])
+}
+
+function hasChanges(row: DailyDataRow, draft: DailyDraft): boolean {
+  return hasData(draft) || clearFieldsFor(row, draft).length > 0
+}
+
 function isValidNumber(value: string, integer = true, allowNegative = false): boolean {
 	const trimmed = value.trim()
 	if (!trimmed) return true
 	const parsed = Number(trimmed)
 	return Number.isFinite(parsed) && (allowNegative || parsed >= 0) && (!integer || Number.isInteger(parsed))
-}
-
-function parsePaste(text: string): string[][] {
-  const lines = text.replace(/\r/g, '').split('\n')
-  if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop()
-  return lines.map((line) => line.split('\t'))
 }
 
 function toCents(value: string): number | null {
@@ -84,15 +105,16 @@ function toCents(value: string): number | null {
   return Math.round(Number(trimmed) * 100)
 }
 
-function toDailyInput(anchorId: number, draft: DailyDraft): DailySessionInput {
+function toDailyInput(row: DailyDataRow, draft: DailyDraft): DailySessionInput {
   return {
-    anchor_id: anchorId,
+    anchor_id: row.anchor_id,
     duration_minutes: optionalInteger(draft.duration_minutes),
     views: optionalInteger(draft.views),
     avg_online: optionalInteger(draft.avg_online),
     avg_stay_seconds: optionalInteger(draft.avg_stay_seconds),
     followers_gained: optionalInteger(draft.followers_gained),
     revenue_cents: toCents(draft.revenue_yuan),
+    clear_fields: clearFieldsFor(row, draft),
   }
 }
 
@@ -112,7 +134,7 @@ export function DailyDataPage({ onOpenAnchor, onOpenImport }: { onOpenAnchor: (i
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
-  const inputRefs = useRef<Record<string, HTMLInputElement | null>>({})
+  const inputRefs = useRef<Record<string, AppInlineEditHandle | null>>({})
 
   const load = async () => {
     setLoading(true)
@@ -148,34 +170,12 @@ export function DailyDataPage({ onOpenAnchor, onOpenImport }: { onOpenAnchor: (i
     inputRefs.current[`${row.anchor_id}:${columns[columnIndex].key}`]?.focus()
   }
 
-  const applyPaste = (rowIndex: number, columnIndex: number, text: string) => {
-    const matrix = parsePaste(text)
-    if (matrix.length === 0 || (matrix.length === 1 && matrix[0].length === 1)) return false
-    setDrafts((current) => {
-      const next = { ...current }
-      const singleColumn = matrix.every((line) => line.length === 1)
-      matrix.forEach((line, pastedRowIndex) => {
-        const targetRow = rows[rowIndex + pastedRowIndex]
-        if (!targetRow) return
-        const values = singleColumn ? [{ value: line[0], offset: 0 }] : line.map((value, offset) => ({ value, offset }))
-        values.forEach(({ value, offset }) => {
-          const targetColumn = columns[columnIndex + offset]
-          if (!targetColumn) return
-          next[targetRow.anchor_id] = { ...(next[targetRow.anchor_id] ?? emptyDraft()), [targetColumn.key]: value.trim() }
-        })
-      })
-      return next
-    })
-    setMessage('')
-    return true
-  }
-
   const save = async () => {
     setError('')
     setMessage('')
-    const dataRows = rows.filter((row) => hasData(drafts[row.anchor_id] ?? emptyDraft()))
+    const dataRows = rows.filter((row) => hasChanges(row, drafts[row.anchor_id] ?? emptyDraft()))
     if (dataRows.length === 0) {
-      setError('请至少填写一位主播的数据后再保存。')
+      setError('请至少填写或清空一位主播的数据后再保存。')
       return
     }
     const invalid = dataRows.find((row) => {
@@ -191,7 +191,7 @@ export function DailyDataPage({ onOpenAnchor, onOpenImport }: { onOpenAnchor: (i
       const result = await Service.SaveDailyData({
         session_date: sessionDate,
         source: '每日数据',
-        rows: dataRows.map((row) => toDailyInput(row.anchor_id, drafts[row.anchor_id])),
+        rows: dataRows.map((row) => toDailyInput(row, drafts[row.anchor_id])),
       })
       setMessage(resultMessage(result))
       await load()
@@ -202,17 +202,23 @@ export function DailyDataPage({ onOpenAnchor, onOpenImport }: { onOpenAnchor: (i
     }
   }
 
+  const validateCell = (column: DailyColumn, value: string) => {
+    const integer = column.key !== 'revenue_yuan'
+    const allowNegative = column.key === 'followers_gained'
+    return isValidNumber(value, integer, allowNegative) ? null : (integer ? '请输入整数' : '请输入有效金额')
+  }
+
   return <AppPage title="每日数据" description="在一个表格里完成当天主要直播数据录入；空白主播不会被保存。" actions={<><AppButton appearance="subtle" onClick={onOpenImport}>导入文件</AppButton><AppButton appearance="subtle" onClick={() => void load()}>刷新</AppButton><AppButton appearance="primary" onClick={() => void save()} loading={saving}>批量保存</AppButton></>}>
     <section className="daily-workbench-toolbar">
-      <div className="daily-date-control"><label htmlFor="daily-session-date">数据日期</label><input id="daily-session-date" type="date" value={sessionDate} onChange={(event) => { setSessionDate(event.target.value); setMessage('') }} /></div>
+      <div className="daily-date-control"><label htmlFor="daily-session-date">数据日期</label><AppDatePicker id="daily-session-date" allowClear={false} value={dayjsToAppDate(dayjs(sessionDate))} onValueChange={(value) => { const selected = appDateToDayjs(value); if (selected) { setSessionDate(selected.format('YYYY-MM-DD')); setMessage('') } }} /></div>
       <AppSearchBox className="daily-search" value={query} onValueChange={setQuery} onKeyDown={(event) => { if (event.key === 'Enter') setAppliedQuery(query.trim()) }} placeholder="筛选主播，回车应用…" />
       <div className="daily-workbench-summary"><strong>{filledCount}</strong> / {rows.length} 位主播有数据</div>
     </section>
     {message && <div className="notice notice-success">{message}</div>}
     {error && <div className="notice notice-error" role="alert">{error}</div>}
     <AppCard className="daily-workbench-card">
-      {loading ? <div className="loading-state">正在读取主播名单…</div> : rows.length === 0 ? <div className="daily-empty">没有匹配的在册主播，请先建立主播档案。</div> : <div className="daily-table-wrap"><table className="daily-table"><thead><tr><th className="daily-anchor-column">主播</th>{columns.map((column) => <th key={column.key}>{column.label}<small>{column.suffix ?? (column.key === 'duration_minutes' ? '分钟' : column.key === 'avg_stay_seconds' ? '秒' : column.key === 'revenue_yuan' ? '元' : '')}</small></th>)}</tr></thead><tbody>{rows.map((row, rowIndex) => { const draft = drafts[row.anchor_id] ?? emptyDraft(); const filled = hasData(draft); return <tr key={row.anchor_id} className={filled ? 'is-filled' : ''}><th scope="row" className="daily-anchor-cell"><button type="button" onClick={() => onOpenAnchor(row.anchor_id)}>{row.nickname}</button><small>{row.platform} · {row.stage}</small></th>{columns.map((column, columnIndex) => <td key={column.key}><input ref={(node) => { inputRefs.current[`${row.anchor_id}:${column.key}`] = node }} className="daily-input" type="text" inputMode={column.key === 'revenue_yuan' ? 'decimal' : 'numeric'} value={draft[column.key]} placeholder={column.placeholder} aria-label={`${row.nickname} ${column.label}`} onChange={(event) => updateCell(row.anchor_id, column.key, event.target.value)} onPaste={(event) => { const text = event.clipboardData.getData('text/plain'); if (applyPaste(rowIndex, columnIndex, text)) event.preventDefault() }} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); focusCell(rowIndex + 1, columnIndex) } }} /></td>)}</tr> })}</tbody></table></div>}
+      {loading ? <div className="loading-state">正在读取主播名单…</div> : rows.length === 0 ? <div className="daily-empty">没有匹配的在册主播，请先建立主播档案。</div> : <div className="daily-table-wrap"><table className="daily-table"><thead><tr><th className="daily-anchor-column">主播</th>{columns.map((column) => <th key={column.key}>{column.label}<small>{column.suffix ?? (column.key === 'duration_minutes' ? '分钟' : column.key === 'avg_stay_seconds' ? '秒' : column.key === 'revenue_yuan' ? '元' : '')}</small></th>)}</tr></thead><tbody>{rows.map((row, rowIndex) => { const draft = drafts[row.anchor_id] ?? emptyDraft(); const filled = hasData(draft); return <tr key={row.anchor_id} className={filled ? 'is-filled' : ''}><th scope="row" className="daily-anchor-cell"><button type="button" onClick={() => onOpenAnchor(row.anchor_id)}>{row.nickname}</button><small>{row.platform} · {row.stage}</small></th>{columns.map((column, columnIndex) => { const cellKey = `${row.anchor_id}:${column.key}`; return <td key={column.key}><AppInlineEdit ref={(handle) => { inputRefs.current[cellKey] = handle }} className="daily-inline-edit" value={draft[column.key]} placeholder={column.placeholder} ariaLabel={`${row.nickname} ${column.label}`} selection="all" validate={(value) => validateCell(column, value)} onCommit={(value) => { updateCell(row.anchor_id, column.key, value); window.requestAnimationFrame(() => focusCell(rowIndex + 1, columnIndex)) }} /></td> })}</tr> })}</tbody></table></div>}
     </AppCard>
-    <p className="daily-workbench-help">提示：支持 Tab 横向切换、Enter 进入下一位主播；从 Excel 复制一列或一块区域后，可直接粘贴到对应单元格。保存时只提交有数据的行。</p>
+    <p className="daily-workbench-help">提示：双击单元格或按 Enter 开始编辑，提交后按 Enter 可进入下一位主播；保存时只提交有数据的行。</p>
   </AppPage>
 }

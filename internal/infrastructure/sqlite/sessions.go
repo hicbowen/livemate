@@ -314,25 +314,14 @@ func (s *Store) GetDailyData(query domain.DailyDataQuery) (domain.DailyData, err
 
 // SaveDailyData upserts only the six high-frequency fields used by the daily
 // workbench. Existing sessions keep their detailed timing, source, operator,
-// and low-frequency fields intact, so a batch edit cannot erase context that
-// was recorded from the anchor detail page.
+// and low-frequency fields intact. A field listed in ClearFields is explicitly
+// cleared instead of being treated as an omitted patch value.
 func (s *Store) SaveDailyData(input domain.DailyDataInput) (domain.DailyDataSaveResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	input.SessionDate = normalizeDate(input.SessionDate)
-	if err := validateDate(input.SessionDate, "数据日期"); err != nil {
-		return domain.DailyDataSaveResult{}, err
-	}
-	if len(input.Rows) > 500 {
-		return domain.DailyDataSaveResult{}, fmt.Errorf("单次最多保存 500 位主播")
-	}
 	db, err := s.dbLocked()
 	if err != nil {
 		return domain.DailyDataSaveResult{}, err
-	}
-	source := strings.TrimSpace(input.Source)
-	if source == "" {
-		source = "每日数据"
 	}
 	tx, err := db.Begin()
 	if err != nil {
@@ -344,40 +333,139 @@ func (s *Store) SaveDailyData(input domain.DailyDataInput) (domain.DailyDataSave
 			_ = tx.Rollback()
 		}
 	}()
+	part, err := saveDailyDataTx(tx, input)
+	if err != nil {
+		return domain.DailyDataSaveResult{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.DailyDataSaveResult{}, fmt.Errorf("批量保存直播数据失败：提交事务失败：%w", err)
+	}
+	committed = true
+	sessions := make([]domain.LiveSession, 0, len(part.ids))
+	for _, id := range part.ids {
+		item, err := s.getSessionLocked(id)
+		if err != nil {
+			return domain.DailyDataSaveResult{}, err
+		}
+		sessions = append(sessions, item)
+	}
+	return domain.DailyDataSaveResult{
+		SessionDate: part.sessionDate, SavedCount: len(part.ids),
+		CreatedCount: part.createdCount, UpdatedCount: part.updatedCount,
+		Sessions: sessions,
+	}, nil
+}
 
-	ids := make([]int64, 0, len(input.Rows))
+// ImportDailyData commits all dated batches from one file in a single
+// transaction. Each batch still has the same per-date upsert semantics as
+// SaveDailyData, but a validation or database error rolls the whole import
+// back.
+func (s *Store) ImportDailyData(input domain.DailyDataBatchInput) (domain.DailyDataBatchSaveResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(input.Batches) == 0 {
+		return domain.DailyDataBatchSaveResult{Dates: []string{}}, nil
+	}
+	totalRows := 0
+	seenDates := make(map[string]struct{}, len(input.Batches))
+	for _, batch := range input.Batches {
+		totalRows += len(batch.Rows)
+		if totalRows > 50000 {
+			return domain.DailyDataBatchSaveResult{}, fmt.Errorf("单次文件导入最多处理 50000 行")
+		}
+		date := normalizeDate(batch.SessionDate)
+		if _, exists := seenDates[date]; exists {
+			return domain.DailyDataBatchSaveResult{}, fmt.Errorf("文件导入中日期重复：%s", date)
+		}
+		seenDates[date] = struct{}{}
+	}
+	db, err := s.dbLocked()
+	if err != nil {
+		return domain.DailyDataBatchSaveResult{}, err
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return domain.DailyDataBatchSaveResult{}, fmt.Errorf("文件导入失败：开启事务失败：%w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+
+	result := domain.DailyDataBatchSaveResult{Dates: make([]string, 0, len(input.Batches))}
+	for _, batch := range input.Batches {
+		if strings.TrimSpace(batch.Source) == "" {
+			batch.Source = input.Source
+		}
+		part, err := saveDailyDataTx(tx, batch)
+		if err != nil {
+			return domain.DailyDataBatchSaveResult{}, err
+		}
+		result.SavedCount += len(part.ids)
+		result.CreatedCount += part.createdCount
+		result.UpdatedCount += part.updatedCount
+		result.Dates = append(result.Dates, part.sessionDate)
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.DailyDataBatchSaveResult{}, fmt.Errorf("文件导入失败：提交事务失败：%w", err)
+	}
+	committed = true
+	return result, nil
+}
+
+type dailyDataTxResult struct {
+	sessionDate  string
+	ids          []int64
+	createdCount int
+	updatedCount int
+}
+
+func saveDailyDataTx(tx *sql.Tx, input domain.DailyDataInput) (dailyDataTxResult, error) {
+	input.SessionDate = normalizeDate(input.SessionDate)
+	if err := validateDate(input.SessionDate, "数据日期"); err != nil {
+		return dailyDataTxResult{}, err
+	}
+	if len(input.Rows) > 500 {
+		return dailyDataTxResult{}, fmt.Errorf("单次最多保存 500 位主播")
+	}
+	source := strings.TrimSpace(input.Source)
+	if source == "" {
+		source = "每日数据"
+	}
+	result := dailyDataTxResult{sessionDate: input.SessionDate, ids: make([]int64, 0, len(input.Rows))}
 	seenAnchors := make(map[int64]struct{}, len(input.Rows))
-	createdCount, updatedCount := 0, 0
 	for _, row := range input.Rows {
 		if !dailyDataHasValues(row) {
 			continue
 		}
 		if row.AnchorID <= 0 {
-			return domain.DailyDataSaveResult{}, fmt.Errorf("批量保存直播数据失败：主播不能为空")
+			return dailyDataTxResult{}, fmt.Errorf("批量保存直播数据失败：主播不能为空")
 		}
 		if _, exists := seenAnchors[row.AnchorID]; exists {
-			return domain.DailyDataSaveResult{}, fmt.Errorf("批量保存直播数据失败：同一主播不能重复出现")
+			return dailyDataTxResult{}, fmt.Errorf("批量保存直播数据失败：同一主播不能重复出现")
 		}
 		seenAnchors[row.AnchorID] = struct{}{}
 		if err := validateDailySessionInput(row); err != nil {
-			return domain.DailyDataSaveResult{}, err
+			return dailyDataTxResult{}, err
 		}
 		var anchorCount int
 		if err := tx.QueryRow(`SELECT COUNT(*) FROM anchors WHERE id = ? AND deleted_at IS NULL`, row.AnchorID).Scan(&anchorCount); err != nil {
-			return domain.DailyDataSaveResult{}, err
+			return dailyDataTxResult{}, err
 		}
 		if anchorCount == 0 {
-			return domain.DailyDataSaveResult{}, fmt.Errorf("批量保存直播数据失败：主播不存在或已归档")
+			return dailyDataTxResult{}, fmt.Errorf("批量保存直播数据失败：主播不存在或已归档")
 		}
 
 		var existingID sql.NullInt64
 		if err := tx.QueryRow(`SELECT id FROM live_sessions WHERE anchor_id = ? AND session_date = ? ORDER BY id DESC LIMIT 1`, row.AnchorID, input.SessionDate).Scan(&existingID); err != nil && err != sql.ErrNoRows {
-			return domain.DailyDataSaveResult{}, err
+			return dailyDataTxResult{}, err
 		}
 		updatedAt := now()
 		if existingID.Valid {
-			sets := make([]string, 0, 7)
-			args := make([]any, 0, 8)
+			sets := make([]string, 0, 13)
+			args := make([]any, 0, 14)
 			if row.DurationMinutes != nil {
 				sets = append(sets, "duration_minutes = ?", "duration_overridden = 1")
 				args = append(args, *row.DurationMinutes)
@@ -402,17 +490,27 @@ func (s *Store) SaveDailyData(input domain.DailyDataInput) (domain.DailyDataSave
 				sets = append(sets, "revenue_cents = ?")
 				args = append(args, *row.RevenueCents)
 			}
+			for _, field := range row.ClearFields {
+				column := dailyDataFieldColumns[strings.TrimSpace(field)]
+				sets = append(sets, column+" = NULL")
+				if column == "duration_minutes" {
+					sets = append(sets, "duration_overridden = 0")
+				}
+			}
 			sets = append(sets, "updated_at = ?")
 			args = append(args, updatedAt, existingID.Int64)
 			if _, err := tx.Exec(`UPDATE live_sessions SET `+strings.Join(sets, ", ")+` WHERE id = ?`, args...); err != nil {
-				return domain.DailyDataSaveResult{}, fmt.Errorf("批量保存直播数据失败：更新场次失败：%w", err)
+				return dailyDataTxResult{}, fmt.Errorf("批量保存直播数据失败：更新场次失败：%w", err)
 			}
-			ids = append(ids, existingID.Int64)
-			updatedCount++
+			result.ids = append(result.ids, existingID.Int64)
+			result.updatedCount++
 			continue
 		}
+		if len(row.ClearFields) > 0 {
+			return dailyDataTxResult{}, fmt.Errorf("批量保存直播数据失败：不能清空不存在的每日数据")
+		}
 
-		result, err := tx.Exec(`INSERT INTO live_sessions(
+		inserted, err := tx.Exec(`INSERT INTO live_sessions(
             anchor_id, session_date, duration_minutes, duration_overridden, views, avg_online,
             avg_stay_seconds, followers_gained, revenue_cents, source, created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -420,38 +518,61 @@ func (s *Store) SaveDailyData(input domain.DailyDataInput) (domain.DailyDataSave
 			intValue(row.Views), intValue(row.AvgOnline), intValue(row.AvgStaySeconds), intValue(row.FollowersGained),
 			intValue(row.RevenueCents), source, updatedAt, updatedAt)
 		if err != nil {
-			return domain.DailyDataSaveResult{}, fmt.Errorf("批量保存直播数据失败：新增场次失败：%w", err)
+			return dailyDataTxResult{}, fmt.Errorf("批量保存直播数据失败：新增场次失败：%w", err)
 		}
-		id, err := result.LastInsertId()
+		id, err := inserted.LastInsertId()
 		if err != nil {
-			return domain.DailyDataSaveResult{}, fmt.Errorf("批量保存直播数据失败：读取主键失败：%w", err)
+			return dailyDataTxResult{}, fmt.Errorf("批量保存直播数据失败：读取主键失败：%w", err)
 		}
-		ids = append(ids, id)
-		createdCount++
+		result.ids = append(result.ids, id)
+		result.createdCount++
 	}
-	if len(ids) == 0 {
-		return domain.DailyDataSaveResult{SessionDate: input.SessionDate, Sessions: []domain.LiveSession{}}, nil
-	}
-	if err := tx.Commit(); err != nil {
-		return domain.DailyDataSaveResult{}, fmt.Errorf("批量保存直播数据失败：提交事务失败：%w", err)
-	}
-	committed = true
-	sessions := make([]domain.LiveSession, 0, len(ids))
-	for _, id := range ids {
-		item, err := s.getSessionLocked(id)
-		if err != nil {
-			return domain.DailyDataSaveResult{}, err
-		}
-		sessions = append(sessions, item)
-	}
-	return domain.DailyDataSaveResult{SessionDate: input.SessionDate, SavedCount: len(ids), CreatedCount: createdCount, UpdatedCount: updatedCount, Sessions: sessions}, nil
+	return result, nil
+}
+
+var dailyDataFieldColumns = map[string]string{
+	"duration_minutes": "duration_minutes",
+	"views":            "views",
+	"avg_online":       "avg_online",
+	"avg_stay_seconds": "avg_stay_seconds",
+	"followers_gained": "followers_gained",
+	"revenue_cents":    "revenue_cents",
 }
 
 func dailyDataHasValues(row domain.DailySessionInput) bool {
-	return row.DurationMinutes != nil || row.Views != nil || row.AvgOnline != nil || row.AvgStaySeconds != nil || row.FollowersGained != nil || row.RevenueCents != nil
+	return row.DurationMinutes != nil || row.Views != nil || row.AvgOnline != nil || row.AvgStaySeconds != nil || row.FollowersGained != nil || row.RevenueCents != nil || len(row.ClearFields) > 0
 }
 
 func validateDailySessionInput(input domain.DailySessionInput) error {
+	seenClearFields := make(map[string]struct{}, len(input.ClearFields))
+	for _, field := range input.ClearFields {
+		field = strings.TrimSpace(field)
+		if _, ok := dailyDataFieldColumns[field]; !ok {
+			return fmt.Errorf("每日数据清空字段无效：%s", field)
+		}
+		if _, exists := seenClearFields[field]; exists {
+			return fmt.Errorf("每日数据清空字段重复：%s", field)
+		}
+		seenClearFields[field] = struct{}{}
+	}
+	if _, ok := seenClearFields["duration_minutes"]; ok && input.DurationMinutes != nil {
+		return fmt.Errorf("直播时长不能同时填写和清空")
+	}
+	if _, ok := seenClearFields["views"]; ok && input.Views != nil {
+		return fmt.Errorf("场观不能同时填写和清空")
+	}
+	if _, ok := seenClearFields["avg_online"]; ok && input.AvgOnline != nil {
+		return fmt.Errorf("平均在线不能同时填写和清空")
+	}
+	if _, ok := seenClearFields["avg_stay_seconds"]; ok && input.AvgStaySeconds != nil {
+		return fmt.Errorf("平均停留不能同时填写和清空")
+	}
+	if _, ok := seenClearFields["followers_gained"]; ok && input.FollowersGained != nil {
+		return fmt.Errorf("新增粉丝不能同时填写和清空")
+	}
+	if _, ok := seenClearFields["revenue_cents"]; ok && input.RevenueCents != nil {
+		return fmt.Errorf("流水不能同时填写和清空")
+	}
 	if input.DurationMinutes != nil && *input.DurationMinutes < 0 {
 		return fmt.Errorf("直播时长不能为负数")
 	}

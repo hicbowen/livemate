@@ -23,6 +23,7 @@ var (
 	NextActions       = []string{"继续", "调整方案", "结束方案", "新增方案", "继续观察"}
 	GoalStatuses      = []string{"进行中", "已完成", "已取消"}
 	EventTypes        = []string{"更换直播时间", "调整直播内容", "更换运营", "停播", "恢复开播", "违规", "设备变化", "账号变化", "活动", "合作", "主播个人状态", "其他"}
+	AnomalyDecisions  = []string{"已忽略", "继续观察", "已转为问题"}
 )
 
 type AppInfo struct {
@@ -35,6 +36,17 @@ type AppInfo struct {
 	DatabasePath string `json:"database_path"`
 	LogDir       string `json:"log_dir"`
 	BackupDir    string `json:"backup_dir"`
+}
+
+// TodoTask is the persisted unit used by the daily task page. Tasks are
+// intentionally scoped to a calendar date; the frontend can move or copy a
+// task by replacing the dated snapshot through the application service.
+type TodoTask struct {
+	ID                   string   `json:"id"`
+	Text                 string   `json:"text"`
+	Completed            bool     `json:"completed"`
+	TimeRange            []string `json:"time_range,omitempty"`
+	StartReminderEnabled bool     `json:"start_reminder_enabled"`
 }
 
 type Anchor struct {
@@ -144,13 +156,14 @@ type DailyData struct {
 }
 
 type DailySessionInput struct {
-	AnchorID        int64  `json:"anchor_id"`
-	DurationMinutes *int   `json:"duration_minutes"`
-	Views           *int64 `json:"views"`
-	AvgOnline       *int64 `json:"avg_online"`
-	AvgStaySeconds  *int64 `json:"avg_stay_seconds"`
-	FollowersGained *int64 `json:"followers_gained"`
-	RevenueCents    *int64 `json:"revenue_cents"`
+	AnchorID        int64    `json:"anchor_id"`
+	DurationMinutes *int     `json:"duration_minutes"`
+	Views           *int64   `json:"views"`
+	AvgOnline       *int64   `json:"avg_online"`
+	AvgStaySeconds  *int64   `json:"avg_stay_seconds"`
+	FollowersGained *int64   `json:"followers_gained"`
+	RevenueCents    *int64   `json:"revenue_cents"`
+	ClearFields     []string `json:"clear_fields,omitempty"`
 }
 
 type DailyDataInput struct {
@@ -165,6 +178,28 @@ type DailyDataSaveResult struct {
 	CreatedCount int           `json:"created_count"`
 	UpdatedCount int           `json:"updated_count"`
 	Sessions     []LiveSession `json:"sessions"`
+}
+
+// DailyDataBatchInput is the file-import boundary. All dated batches are
+// committed in one transaction so a failed file cannot leave earlier dates
+// partially imported.
+type DailyDataBatchInput struct {
+	Source  string           `json:"source"`
+	Batches []DailyDataInput `json:"batches"`
+}
+
+type DailyDataBatchSaveResult struct {
+	SavedCount   int      `json:"saved_count"`
+	CreatedCount int      `json:"created_count"`
+	UpdatedCount int      `json:"updated_count"`
+	Dates        []string `json:"dates"`
+}
+
+type AnomalyDecisionInput struct {
+	AnchorID   int64  `json:"anchor_id"`
+	AnomalyID  string `json:"anomaly_id"`
+	DetectedAt string `json:"detected_at"`
+	Decision   string `json:"decision"`
 }
 
 // ImportTable is the neutral table shape shared by the spreadsheet parser

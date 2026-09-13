@@ -59,6 +59,13 @@ func TestMigrationAndAnchorSoftDelete(t *testing.T) {
 	if statusHistoryMigrationCount != 1 {
 		t.Fatalf("status history migration count = %d, want 1", statusHistoryMigrationCount)
 	}
+	var anomalyDecisionMigrationCount int
+	if err := store.db.QueryRow(`SELECT COUNT(*) FROM schema_migrations WHERE version = 4 AND name = '004_anomaly_decisions.sql'`).Scan(&anomalyDecisionMigrationCount); err != nil {
+		t.Fatalf("anomaly decision migration query: %v", err)
+	}
+	if anomalyDecisionMigrationCount != 1 {
+		t.Fatalf("anomaly decision migration count = %d, want 1", anomalyDecisionMigrationCount)
+	}
 	anchor := testAnchor(t, store, "小鱼")
 	if len(anchor.Tags) != 2 {
 		t.Fatalf("tags = %#v, want deduplicated tags", anchor.Tags)
@@ -230,6 +237,13 @@ func TestDailyDataUpsertAndAtomicBatch(t *testing.T) {
 	if updated.SavedCount != 1 || updated.CreatedCount != 0 || updated.UpdatedCount != 1 || updated.Sessions[0].Views == nil || *updated.Sessions[0].Views != 1200 {
 		t.Fatalf("daily-update result = %#v", updated)
 	}
+	cleared, err := store.SaveDailyData(domain.DailyDataInput{SessionDate: date, Rows: []domain.DailySessionInput{{AnchorID: anchorA.ID, ClearFields: []string{"views", "duration_minutes"}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cleared.Sessions) != 1 || cleared.Sessions[0].Views != nil || cleared.Sessions[0].DurationMinutes != nil || cleared.Sessions[0].DurationOverride {
+		t.Fatalf("daily clear did not clear explicit fields: %#v", cleared.Sessions)
+	}
 	var sessionCount int
 	if err := store.db.QueryRow(`SELECT COUNT(*) FROM live_sessions WHERE anchor_id = ? AND session_date = ?`, anchorA.ID, date).Scan(&sessionCount); err != nil {
 		t.Fatal(err)
@@ -256,6 +270,22 @@ func TestDailyDataUpsertAndAtomicBatch(t *testing.T) {
 	}
 	if sessionCount != 0 {
 		t.Fatalf("failed batch was partially committed: %d sessions", sessionCount)
+	}
+	batchResult, err := store.ImportDailyData(domain.DailyDataBatchInput{
+		Source: "文件导入",
+		Batches: []domain.DailyDataInput{
+			{SessionDate: "2026-09-15", Rows: []domain.DailySessionInput{{AnchorID: anchorA.ID, Views: int64p(20)}}},
+			{SessionDate: "2026-09-16", Rows: []domain.DailySessionInput{{AnchorID: 999999, Views: int64p(30)}}},
+		},
+	})
+	if err == nil {
+		t.Fatalf("invalid multi-date import should fail, result=%#v", batchResult)
+	}
+	if err := store.db.QueryRow(`SELECT COUNT(*) FROM live_sessions WHERE session_date IN ('2026-09-15', '2026-09-16')`).Scan(&sessionCount); err != nil {
+		t.Fatal(err)
+	}
+	if sessionCount != 0 {
+		t.Fatalf("failed multi-date import was partially committed: %d sessions", sessionCount)
 	}
 
 	filtered, err := store.GetDailyData(domain.DailyDataQuery{SessionDate: date, Query: "小雨"})
@@ -314,6 +344,25 @@ func TestOneIssueMultiplePlansAndIndependentFollowups(t *testing.T) {
 	}
 	if followup1.MetricChangeRate == nil || math.Abs(*followup1.MetricChangeRate-(3.0/42.0)) > 0.000001 {
 		t.Fatalf("metric change rate = %#v, want 3/42", followup1.MetricChangeRate)
+	}
+	updatedPlan, err := store.UpdatePlan(planA.ID, domain.ImprovementPlanInput{
+		AnchorID: anchor.ID, IssueID: issue.ID, Title: planA.Title, Objective: planA.Objective,
+		Actions: planA.Actions, MetricName: planA.MetricName, BaselineValue: floatp(50), TargetValue: planA.TargetValue,
+		MetricUnit: planA.MetricUnit, StartDate: planA.StartDate, ExpectedEndDate: planA.ExpectedEndDate,
+		Priority: planA.Priority, Status: planA.Status, ResultSummary: planA.ResultSummary,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updatedPlan.BaselineValue == nil || math.Abs(*updatedPlan.BaselineValue-50) > 0.001 {
+		t.Fatalf("updated plan baseline = %#v", updatedPlan.BaselineValue)
+	}
+	updatedFollowup, err := store.GetFollowup(followup1.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updatedFollowup.MetricChange == nil || math.Abs(*updatedFollowup.MetricChange+5) > 0.001 || updatedFollowup.MetricChangeRate == nil || math.Abs(*updatedFollowup.MetricChangeRate+0.1) > 0.000001 {
+		t.Fatalf("followup metric change was not refreshed after baseline edit: %#v", updatedFollowup)
 	}
 	if _, err := store.AddFollowup(domain.PlanFollowupInput{PlanID: planA.ID, AnchorID: anchor.ID, FollowupDate: "2026-09-11", ExecutionStatus: "完整执行", MetricValue: floatp(53), Effect: "有效", NextAction: "继续"}); err != nil {
 		t.Fatal(err)
@@ -443,6 +492,52 @@ func TestAnchorAnomaliesAreConservativeRuleCandidates(t *testing.T) {
 		if anomaly.Title == "主播表现差" || anomaly.DetectedAt == "" || len(anomaly.RelatedSessionIDs) < 3 {
 			t.Fatalf("anomaly should remain a contextual candidate: %#v", anomaly)
 		}
+	}
+	if err := store.SetAnomalyDecision(domain.AnomalyDecisionInput{AnchorID: anchor.ID, AnomalyID: anomalies[0].ID, DetectedAt: anomalies[0].DetectedAt, Decision: "已忽略"}); err != nil {
+		t.Fatal(err)
+	}
+	remaining, err := store.GetAnchorAnomalies(anchor.ID, 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(remaining) != 2 {
+		t.Fatalf("ignored anomaly still visible: %#v", remaining)
+	}
+}
+
+func TestAnchorDetailIncludesHistoricalSessionsForAssociations(t *testing.T) {
+	store := testStore(t)
+	anchor := testAnchor(t, store, "历史场次主播")
+	for index := 0; index < 31; index++ {
+		if _, err := store.CreateSession(domain.LiveSessionInput{AnchorID: anchor.ID, SessionDate: shiftDate(today(), -index), Views: int64p(int64(index + 1))}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	detail, err := store.GetAnchorDetail(anchor.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(detail.Sessions) != 31 {
+		t.Fatalf("detail sessions = %d, want all 31 recent historical sessions", len(detail.Sessions))
+	}
+}
+
+func TestPlanDateValidationAndTerminalTimestamp(t *testing.T) {
+	store := testStore(t)
+	anchor := testAnchor(t, store, "方案校验主播")
+	issue, err := store.CreateIssue(domain.AnchorIssueInput{AnchorID: anchor.ID, Title: "待验证问题", Category: "其他", Priority: "重点"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CreatePlan(domain.ImprovementPlanInput{AnchorID: anchor.ID, IssueID: issue.ID, Title: "日期错误方案", StartDate: "2026-09-13", ExpectedEndDate: stringp("2026-09-12")}); err == nil {
+		t.Fatal("plan with end date before start date should fail")
+	}
+	plan, err := store.CreatePlan(domain.ImprovementPlanInput{AnchorID: anchor.ID, IssueID: issue.ID, Title: "已完成方案", StartDate: today(), Status: "已验证有效"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.CompletedAt == nil || *plan.CompletedAt == "" {
+		t.Fatalf("terminal plan should have completed_at: %#v", plan)
 	}
 }
 

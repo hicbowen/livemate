@@ -15,23 +15,51 @@ const planSelect = `SELECT p.id, p.anchor_id, p.issue_id, p.title, p.objective, 
     (SELECT COUNT(*) FROM plan_followups f WHERE f.plan_id = p.id)
     FROM improvement_plans p`
 
+func normalizePlanDates(input *domain.ImprovementPlanInput) {
+	input.StartDate = normalizeDate(input.StartDate)
+	if input.ExpectedEndDate == nil {
+		return
+	}
+	value := strings.TrimSpace(*input.ExpectedEndDate)
+	if value == "" {
+		input.ExpectedEndDate = nil
+		return
+	}
+	input.ExpectedEndDate = &value
+}
+
+func validatePlanDates(input domain.ImprovementPlanInput) error {
+	if err := validateDate(input.StartDate, "开始日期"); err != nil {
+		return err
+	}
+	if input.ExpectedEndDate == nil {
+		return nil
+	}
+	if err := validateDate(*input.ExpectedEndDate, "预计结束日期"); err != nil {
+		return err
+	}
+	if *input.ExpectedEndDate < input.StartDate {
+		return fmt.Errorf("预计结束日期不能早于开始日期")
+	}
+	return nil
+}
+
+func terminalPlanStatus(status string) bool {
+	return status == "已验证有效" || status == "无效" || status == "已终止"
+}
+
 func (s *Store) CreatePlan(input domain.ImprovementPlanInput) (domain.ImprovementPlan, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	input.StartDate = normalizeDate(input.StartDate)
+	normalizePlanDates(&input)
 	if strings.TrimSpace(input.Title) == "" {
 		return domain.ImprovementPlan{}, fmt.Errorf("方案标题不能为空")
 	}
 	if input.AnchorID <= 0 || input.IssueID <= 0 {
 		return domain.ImprovementPlan{}, fmt.Errorf("方案必须关联主播和问题")
 	}
-	if err := validateDate(input.StartDate, "开始日期"); err != nil {
+	if err := validatePlanDates(input); err != nil {
 		return domain.ImprovementPlan{}, err
-	}
-	if input.ExpectedEndDate != nil && *input.ExpectedEndDate != "" {
-		if err := validateDate(*input.ExpectedEndDate, "预计结束日期"); err != nil {
-			return domain.ImprovementPlan{}, err
-		}
 	}
 	priority := defaultString(input.Priority, domain.Priorities[0])
 	status := defaultString(input.Status, domain.PlanStatuses[0])
@@ -49,9 +77,13 @@ func (s *Store) CreatePlan(input domain.ImprovementPlanInput) (domain.Improvemen
 		return domain.ImprovementPlan{}, err
 	}
 	createdAt := now()
+	completedAt := any(nil)
+	if terminalPlanStatus(status) {
+		completedAt = createdAt
+	}
 	result, err := db.Exec(`INSERT INTO improvement_plans(anchor_id, issue_id, title, objective, actions, metric_name, baseline_value, target_value, metric_unit, start_date, expected_end_date, priority, status, result_summary, created_at, updated_at, completed_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		input.AnchorID, input.IssueID, strings.TrimSpace(input.Title), input.Objective, input.Actions, input.MetricName, floatValue(input.BaselineValue), floatValue(input.TargetValue), input.MetricUnit, input.StartDate, stringValue(input.ExpectedEndDate), priority, status, input.ResultSummary, createdAt, createdAt, nil)
+		input.AnchorID, input.IssueID, strings.TrimSpace(input.Title), input.Objective, input.Actions, input.MetricName, floatValue(input.BaselineValue), floatValue(input.TargetValue), input.MetricUnit, input.StartDate, stringValue(input.ExpectedEndDate), priority, status, input.ResultSummary, createdAt, createdAt, completedAt)
 	if err != nil {
 		return domain.ImprovementPlan{}, fmt.Errorf("保存改进方案失败：%w", err)
 	}
@@ -65,17 +97,12 @@ func (s *Store) CreatePlan(input domain.ImprovementPlanInput) (domain.Improvemen
 func (s *Store) UpdatePlan(id int64, input domain.ImprovementPlanInput) (domain.ImprovementPlan, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	input.StartDate = normalizeDate(input.StartDate)
+	normalizePlanDates(&input)
 	if id <= 0 || input.AnchorID <= 0 || input.IssueID <= 0 || strings.TrimSpace(input.Title) == "" {
 		return domain.ImprovementPlan{}, fmt.Errorf("方案参数无效")
 	}
-	if err := validateDate(input.StartDate, "开始日期"); err != nil {
+	if err := validatePlanDates(input); err != nil {
 		return domain.ImprovementPlan{}, err
-	}
-	if input.ExpectedEndDate != nil && *input.ExpectedEndDate != "" {
-		if err := validateDate(*input.ExpectedEndDate, "预计结束日期"); err != nil {
-			return domain.ImprovementPlan{}, err
-		}
 	}
 	priority := defaultString(input.Priority, domain.Priorities[0])
 	status := defaultString(input.Status, domain.PlanStatuses[0])
@@ -93,11 +120,22 @@ func (s *Store) UpdatePlan(id int64, input domain.ImprovementPlanInput) (domain.
 		return domain.ImprovementPlan{}, err
 	}
 	completedAt := any(nil)
-	if status == "已验证有效" || status == "无效" || status == "已终止" {
+	if terminalPlanStatus(status) {
 		completedAt = now()
 	}
-	result, err := db.Exec(`UPDATE improvement_plans SET issue_id = ?, title = ?, objective = ?, actions = ?, metric_name = ?, baseline_value = ?, target_value = ?, metric_unit = ?, start_date = ?, expected_end_date = ?, priority = ?, status = ?, result_summary = ?, updated_at = ?, completed_at = ? WHERE id = ? AND anchor_id = ?`,
-		input.IssueID, strings.TrimSpace(input.Title), input.Objective, input.Actions, input.MetricName, floatValue(input.BaselineValue), floatValue(input.TargetValue), input.MetricUnit, input.StartDate, stringValue(input.ExpectedEndDate), priority, status, input.ResultSummary, now(), completedAt, id, input.AnchorID)
+	tx, err := db.Begin()
+	if err != nil {
+		return domain.ImprovementPlan{}, fmt.Errorf("保存改进方案失败：开启事务失败：%w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+	updatedAt := now()
+	result, err := tx.Exec(`UPDATE improvement_plans SET issue_id = ?, title = ?, objective = ?, actions = ?, metric_name = ?, baseline_value = ?, target_value = ?, metric_unit = ?, start_date = ?, expected_end_date = ?, priority = ?, status = ?, result_summary = ?, updated_at = ?, completed_at = ? WHERE id = ? AND anchor_id = ?`,
+		input.IssueID, strings.TrimSpace(input.Title), input.Objective, input.Actions, input.MetricName, floatValue(input.BaselineValue), floatValue(input.TargetValue), input.MetricUnit, input.StartDate, stringValue(input.ExpectedEndDate), priority, status, input.ResultSummary, updatedAt, completedAt, id, input.AnchorID)
 	if err != nil {
 		return domain.ImprovementPlan{}, fmt.Errorf("保存改进方案失败：%w", err)
 	}
@@ -105,6 +143,16 @@ func (s *Store) UpdatePlan(id int64, input domain.ImprovementPlanInput) (domain.
 	if count == 0 {
 		return domain.ImprovementPlan{}, fmt.Errorf("改进方案不存在")
 	}
+	if _, err := tx.Exec(`UPDATE plan_followups
+        SET metric_change = CASE WHEN metric_value IS NULL OR ? IS NULL THEN NULL ELSE metric_value - ? END,
+            updated_at = ?
+        WHERE plan_id = ?`, floatValue(input.BaselineValue), floatValue(input.BaselineValue), updatedAt, id); err != nil {
+		return domain.ImprovementPlan{}, fmt.Errorf("保存改进方案失败：刷新跟进指标变化失败：%w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.ImprovementPlan{}, fmt.Errorf("保存改进方案失败：提交事务失败：%w", err)
+	}
+	committed = true
 	return s.getPlanLocked(id)
 }
 
@@ -119,7 +167,7 @@ func (s *Store) ChangePlanStatus(id int64, status string) (domain.ImprovementPla
 		return domain.ImprovementPlan{}, err
 	}
 	completedAt := any(nil)
-	if status == "已验证有效" || status == "无效" || status == "已终止" {
+	if terminalPlanStatus(status) {
 		completedAt = now()
 	}
 	result, err := db.Exec(`UPDATE improvement_plans SET status = ?, updated_at = ?, completed_at = ? WHERE id = ?`, status, now(), completedAt, id)
@@ -448,9 +496,6 @@ func metricChange(baseline, value *float64) *float64 {
 }
 
 func setFollowupMetricChangeRate(db *sql.DB, item *domain.PlanFollowup) error {
-	if item.MetricValue == nil {
-		return nil
-	}
 	var baseline sql.NullFloat64
 	if err := db.QueryRow(`SELECT baseline_value FROM improvement_plans WHERE id = ? AND anchor_id = ?`, item.PlanID, item.AnchorID).Scan(&baseline); err != nil {
 		if err == sql.ErrNoRows {
@@ -458,10 +503,14 @@ func setFollowupMetricChangeRate(db *sql.DB, item *domain.PlanFollowup) error {
 		}
 		return err
 	}
-	if !baseline.Valid || baseline.Float64 == 0 {
-		return nil
+	var baselineValue *float64
+	if baseline.Valid {
+		baselineValue = &baseline.Float64
 	}
-	item.MetricChangeRate = metricRate(&baseline.Float64, item.MetricValue)
+	// Recompute both values on read so records created before a plan baseline
+	// edit cannot expose a stale absolute change or rate.
+	item.MetricChange = metricChange(baselineValue, item.MetricValue)
+	item.MetricChangeRate = metricRate(baselineValue, item.MetricValue)
 	return nil
 }
 

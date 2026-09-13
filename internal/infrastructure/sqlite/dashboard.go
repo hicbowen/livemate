@@ -234,7 +234,10 @@ func (s *Store) Search(query string) ([]domain.SearchResult, error) {
 }
 
 func listSessionsDB(db *sql.DB, anchorID int64) ([]domain.LiveSession, error) {
-	rows, err := db.Query(`SELECT `+liveSessionColumns+` FROM live_sessions WHERE anchor_id = ? ORDER BY session_date DESC, id DESC LIMIT 30`, anchorID)
+	// Detail forms use this list for historical session associations. Keep it
+	// aligned with the other detail collections instead of making older
+	// sessions silently disappear after the first 30 records.
+	rows, err := db.Query(`SELECT `+liveSessionColumns+` FROM live_sessions WHERE anchor_id = ? ORDER BY session_date DESC, id DESC LIMIT 500`, anchorID)
 	if err != nil {
 		return nil, err
 	}

@@ -161,6 +161,13 @@ export interface AnomalyCandidate {
     "related_session_ids": number[] | null;
 }
 
+export interface AnomalyDecisionInput {
+    "anchor_id": number;
+    "anomaly_id": string;
+    "detected_at": string;
+    "decision": string;
+}
+
 export interface AppInfo {
     "name": string;
     "project": string;
@@ -183,6 +190,23 @@ export interface BackupExport {
 export interface DailyData {
     "session_date": string;
     "rows": DailyDataRow[] | null;
+}
+
+/**
+ * DailyDataBatchInput is the file-import boundary. All dated batches are
+ * committed in one transaction so a failed file cannot leave earlier dates
+ * partially imported.
+ */
+export interface DailyDataBatchInput {
+    "source": string;
+    "batches": DailyDataInput[] | null;
+}
+
+export interface DailyDataBatchSaveResult {
+    "saved_count": number;
+    "created_count": number;
+    "updated_count": number;
+    "dates": string[] | null;
 }
 
 export interface DailyDataInput {
@@ -232,6 +256,7 @@ export interface DailySessionInput {
     "avg_stay_seconds": number | null;
     "followers_gained": number | null;
     "revenue_cents": number | null;
+    "clear_fields"?: string[] | null;
 }
 
 export interface Dashboard {
@@ -611,6 +636,19 @@ export interface StatusChange {
     "entity_title": string;
     "status": string;
     "changed_at": string;
+}
+
+/**
+ * TodoTask is the persisted unit used by the daily task page. Tasks are
+ * intentionally scoped to a calendar date; the frontend can move or copy a
+ * task by replacing the dated snapshot through the application service.
+ */
+export interface TodoTask {
+    "id": string;
+    "text": string;
+    "completed": boolean;
+    "time_range"?: string[] | null;
+    "start_reminder_enabled": boolean;
 }
 
 export interface TrendPoint {

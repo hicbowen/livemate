@@ -163,7 +163,7 @@ func (s *Store) GetAnchorAnomalies(anchorID int64, days int) ([]domain.AnomalyCa
 			})
 		}
 	}
-	return result, nil
+	return filterSuppressedAnomalies(db, anchorID, result)
 }
 
 func averageIntMetric(sessions []domain.LiveSession, value func(domain.LiveSession) *int64) *float64 {
