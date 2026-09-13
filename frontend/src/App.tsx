@@ -65,6 +65,8 @@ import { AnchorDetailPage, SettingsPage, type DetailTab } from './detail'
 import { DailyDataPage } from './features/daily-data/DailyDataPage'
 import { DataImportPage } from './features/data-import/DataImportPage'
 import TodoPage from './features/todo/TodoPage'
+import { AnalyticsPage } from './features/analytics/AnalyticsPage'
+import { ReportsPage } from './features/reports/ReportsPage'
 import { useTodoTaskStore } from './store/todoTaskStore'
 import { AppToastBridge } from './services/ui/message'
 import './app.css'
@@ -386,10 +388,6 @@ function GlobalSearch({ onOpenAnchor }: { onOpenAnchor: (id: number, tab?: Detai
   return <div className="global-search-wrap" onBlur={handleBlur} onFocus={() => setOpen(true)}><AppSearchBox value={query} onValueChange={(value) => { setQuery(value); setOpen(true) }} placeholder="全局搜索主播、问题、方案…" />{open && query.trim() && <div className="global-search-results">{loading ? <div className="search-state">正在搜索…</div> : results.length === 0 ? <div className="search-state">没有找到匹配内容</div> : results.map((result) => <button key={`${result.kind}-${result.id}`} onClick={() => openResult(result)}><span className="search-kind">{resultKind(result.kind)}</span><span className="row-main"><strong>{result.title || result.anchor_nickname}</strong><small>{result.kind === 'anchor' ? result.subtitle : `${result.anchor_nickname} · ${result.subtitle}`}</small></span><span className="row-arrow"><ChevronRightRegular aria-hidden="true" fontSize={16} /></span></button>)}</div>}</div>
 }
 
-function PlaceholderPage({ title }: { title: string }) {
-  return <AppPage title={title} description="该页面正在建设中，后续会在这里提供相应内容。"><AppCard className="placeholder-page"><Empty title="暂未开放" description="功能准备中，敬请期待。" /></AppCard></AppPage>
-}
-
 function App() {
   const view = useAppStore((state) => state.view)
   const setView = useAppStore((state) => state.setView)
@@ -454,8 +452,8 @@ function App() {
 				{view === 'daily-data' && <DailyDataPage onOpenAnchor={openAnchor} onOpenImport={() => setView('data-import')} />}
 				{view === 'data-import' && <DataImportPage onBack={() => setView('daily-data')} />}
 				{view === 'anchors' && <AnchorsPage onOpenAnchor={openAnchor} />}
-				{view === 'data-analysis' && <PlaceholderPage title="数据分析" />}
-				{view === 'reports' && <PlaceholderPage title="报告" />}
+				{view === 'data-analysis' && <AnalyticsPage onOpenAnchor={openAnchor} />}
+				{view === 'reports' && <ReportsPage onOpenAnchor={openAnchor} />}
         {view === 'anchor-detail' && selectedAnchorId && <AnchorDetailPage anchorId={selectedAnchorId} refreshKey={refresh} initialTab={detailNavigation.tab} targetId={detailNavigation.targetId} onBack={backToAnchors} />}
 				{view === 'settings' && <SettingsPage />}
 				</div>

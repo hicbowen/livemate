@@ -96,6 +96,10 @@ export function ExportBackup(): $CancellablePromise<domain$0.BackupExport> {
     return $Call.ByID(2197106471);
 }
 
+export function GetAnalytics(query: domain$0.AnalyticsQuery): $CancellablePromise<domain$0.AnalyticsResult> {
+    return $Call.ByID(2539551807, query);
+}
+
 export function GetAnchor(id: number): $CancellablePromise<domain$0.Anchor> {
     return $Call.ByID(501128680, id);
 }
@@ -110,6 +114,10 @@ export function GetAnchorDetail(id: number): $CancellablePromise<domain$0.Anchor
 
 export function GetAnchorPeriodComparison(anchorID: number, endDate: string, days: number): $CancellablePromise<domain$0.PeriodComparison> {
     return $Call.ByID(3419355208, anchorID, endDate, days);
+}
+
+export function GetAnchorPeriodReport(query: domain$0.ReportQuery): $CancellablePromise<domain$0.AnchorPeriodReport> {
+    return $Call.ByID(1538299111, query);
 }
 
 export function GetAnchorTrend(anchorID: number, days: number): $CancellablePromise<domain$0.TrendPoint[] | null> {
@@ -142,6 +150,10 @@ export function GetGoal(id: number): $CancellablePromise<domain$0.StageGoal> {
 
 export function GetIssue(id: number): $CancellablePromise<domain$0.AnchorIssue> {
     return $Call.ByID(3285190508, id);
+}
+
+export function GetOperationsReport(query: domain$0.ReportQuery): $CancellablePromise<domain$0.OperationsReport> {
+    return $Call.ByID(277651637, query);
 }
 
 export function GetPlan(id: number): $CancellablePromise<domain$0.ImprovementPlan> {

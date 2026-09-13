@@ -514,6 +514,160 @@ type TrendPoint struct {
 	EventCount      int    `json:"event_count"`
 }
 
+// AnalyticsQuery is the shared filter boundary for the analytics and report
+// use cases. Keep this intentionally small: adding a filter here changes the
+// meaning of every aggregate consumer.
+type AnalyticsQuery struct {
+	StartDate string  `json:"start_date"`
+	EndDate   string  `json:"end_date"`
+	AnchorIDs []int64 `json:"anchor_ids"`
+	Stage     string  `json:"stage"`
+	Platform  string  `json:"platform"`
+	Category  string  `json:"category"`
+}
+
+type AnalyticsSummary struct {
+	AnchorCount       int `json:"anchor_count"`
+	ActiveAnchorCount int `json:"active_anchor_count"`
+	SessionCount      int `json:"session_count"`
+
+	DurationMinutes *int64   `json:"duration_minutes"`
+	Views           *int64   `json:"views"`
+	AvgOnline       *float64 `json:"avg_online"`
+	AvgStaySeconds  *float64 `json:"avg_stay_seconds"`
+	FollowersGained *int64   `json:"followers_gained"`
+	RevenueCents    *int64   `json:"revenue_cents"`
+}
+
+type AnalyticsComparison struct {
+	Current  AnalyticsSummary `json:"current"`
+	Previous AnalyticsSummary `json:"previous"`
+
+	DurationChangeRate  *float64 `json:"duration_change_rate"`
+	ViewsChangeRate     *float64 `json:"views_change_rate"`
+	AvgOnlineChangeRate *float64 `json:"avg_online_change_rate"`
+	AvgStayChangeRate   *float64 `json:"avg_stay_change_rate"`
+	FollowersChangeRate *float64 `json:"followers_change_rate"`
+	RevenueChangeRate   *float64 `json:"revenue_change_rate"`
+}
+
+type AnalyticsTrendPoint struct {
+	Date            string   `json:"date"`
+	SessionCount    int      `json:"session_count"`
+	DurationMinutes *int64   `json:"duration_minutes"`
+	Views           *int64   `json:"views"`
+	AvgOnline       *float64 `json:"avg_online"`
+	AvgStaySeconds  *float64 `json:"avg_stay_seconds"`
+	FollowersGained *int64   `json:"followers_gained"`
+	RevenueCents    *int64   `json:"revenue_cents"`
+}
+
+type AnchorAnalyticsRow struct {
+	AnchorID        int64    `json:"anchor_id"`
+	Nickname        string   `json:"nickname"`
+	Stage           string   `json:"stage"`
+	Platform        string   `json:"platform"`
+	Category        string   `json:"category"`
+	SessionCount    int      `json:"session_count"`
+	DurationMinutes *int64   `json:"duration_minutes"`
+	Views           *int64   `json:"views"`
+	AvgOnline       *float64 `json:"avg_online"`
+	AvgStaySeconds  *float64 `json:"avg_stay_seconds"`
+	FollowersGained *int64   `json:"followers_gained"`
+	RevenueCents    *int64   `json:"revenue_cents"`
+
+	PreviousRevenueCents    *int64   `json:"previous_revenue_cents"`
+	RevenueChangeRate       *float64 `json:"revenue_change_rate"`
+	PreviousFollowersGained *int64   `json:"previous_followers_gained"`
+	FollowersChangeRate     *float64 `json:"followers_change_rate"`
+	PreviousAvgOnline       *float64 `json:"previous_avg_online"`
+	AvgOnlineChangeRate     *float64 `json:"avg_online_change_rate"`
+}
+
+type AnalyticsInsight struct {
+	ID       string   `json:"id"`
+	AnchorID int64    `json:"anchor_id"`
+	Nickname string   `json:"nickname"`
+	Type     string   `json:"type"`
+	Severity string   `json:"severity"`
+	Title    string   `json:"title"`
+	Detail   string   `json:"detail"`
+	Value    *float64 `json:"value"`
+}
+
+type AnalyticsResult struct {
+	Query         AnalyticsQuery        `json:"query"`
+	PreviousStart string                `json:"previous_start"`
+	PreviousEnd   string                `json:"previous_end"`
+	Comparison    AnalyticsComparison   `json:"comparison"`
+	Trend         []AnalyticsTrendPoint `json:"trend"`
+	// PreviousTrend lets the frontend overlay adjacent periods without a
+	// second analytics request.
+	PreviousTrend []AnalyticsTrendPoint `json:"previous_trend"`
+	Anchors       []AnchorAnalyticsRow  `json:"anchors"`
+	Insights      []AnalyticsInsight    `json:"insights"`
+}
+
+type ReportQuery struct {
+	Type      string `json:"type"`
+	StartDate string `json:"start_date"`
+	EndDate   string `json:"end_date"`
+	AnchorID  *int64 `json:"anchor_id"`
+}
+
+type ReportIssueSummary struct {
+	NewCount       int `json:"new_count"`
+	PendingCount   int `json:"pending_count"`
+	ImportantCount int `json:"important_count"`
+	UrgentCount    int `json:"urgent_count"`
+	ResolvedCount  int `json:"resolved_count"`
+}
+
+type ReportPlanSummary struct {
+	NewCount        int `json:"new_count"`
+	InProgressCount int `json:"in_progress_count"`
+	PendingFollowup int `json:"pending_followup_count"`
+	ValidatedCount  int `json:"validated_count"`
+	InvalidCount    int `json:"invalid_count"`
+	TerminatedCount int `json:"terminated_count"`
+}
+
+type ReportGoalSummary struct {
+	InProgressCount int `json:"in_progress_count"`
+	CompletedCount  int `json:"completed_count"`
+	DueSoonCount    int `json:"due_soon_count"`
+	OverdueCount    int `json:"overdue_count"`
+}
+
+type OperationsReport struct {
+	StartDate    string             `json:"start_date"`
+	EndDate      string             `json:"end_date"`
+	Analytics    AnalyticsResult    `json:"analytics"`
+	IssueSummary ReportIssueSummary `json:"issue_summary"`
+	PlanSummary  ReportPlanSummary  `json:"plan_summary"`
+	GoalSummary  ReportGoalSummary  `json:"goal_summary"`
+}
+
+// AnchorPeriodReport intentionally exposes only period-relevant operational
+// records. The full historical detail remains on AnchorDetail.
+type AnchorPeriodReport struct {
+	StartDate      string             `json:"start_date"`
+	EndDate        string             `json:"end_date"`
+	Anchor         Anchor             `json:"anchor"`
+	Analytics      AnalyticsResult    `json:"analytics"`
+	IssueSummary   ReportIssueSummary `json:"issue_summary"`
+	PlanSummary    ReportPlanSummary  `json:"plan_summary"`
+	GoalSummary    ReportGoalSummary  `json:"goal_summary"`
+	PendingIssues  []AnchorIssue      `json:"pending_issues"`
+	NewIssues      []AnchorIssue      `json:"new_issues"`
+	ResolvedIssues []AnchorIssue      `json:"resolved_issues"`
+	ActivePlans    []ImprovementPlan  `json:"active_plans"`
+	CompletedPlans []ImprovementPlan  `json:"completed_plans"`
+	Followups      []PlanFollowup     `json:"followups"`
+	Goals          []StageGoal        `json:"goals"`
+	Events         []AnchorEvent      `json:"events"`
+}
+
 type PeriodComparisonMetric struct {
 	MetricName    string   `json:"metric_name"`
 	Label         string   `json:"label"`

@@ -98,6 +98,16 @@ func (s *Service) SetAnomalyDecision(input domain.AnomalyDecisionInput) error {
 	return s.store.SetAnomalyDecision(input)
 }
 
+func (s *Service) GetAnalytics(query domain.AnalyticsQuery) (domain.AnalyticsResult, error) {
+	return s.store.GetAnalytics(query)
+}
+func (s *Service) GetOperationsReport(query domain.ReportQuery) (domain.OperationsReport, error) {
+	return s.store.GetOperationsReport(query)
+}
+func (s *Service) GetAnchorPeriodReport(query domain.ReportQuery) (domain.AnchorPeriodReport, error) {
+	return s.store.GetAnchorPeriodReport(query)
+}
+
 func (s *Service) ListReviews(anchorID int64) ([]domain.OperationReview, error) {
 	return s.store.ListReviews(anchorID)
 }
