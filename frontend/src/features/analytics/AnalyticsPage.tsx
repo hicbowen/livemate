@@ -144,7 +144,7 @@ export function AnalyticsPage({ onOpenAnchor }: { onOpenAnchor: (id: number) => 
     {!data ? <AppCard appearance="outlined" padding="regular" className="analytics-state-card"><div className="analytics-empty"><strong>数据分析暂时不可用</strong><span>请重新加载，或检查本地数据库连接。</span></div></AppCard> : <>
       <AnalyticsSummary comparison={data.comparison} />
       {currentSessionCount === 0 ? <AppCard appearance="outlined" padding="regular" className="analytics-state-card"><div className="analytics-empty"><strong>该时间范围暂无直播数据</strong><span>换一个时间范围，或先录入主播直播数据。</span></div></AppCard> : <>
-        <div className="analytics-main-grid"><AnalyticsTrend trend={data.trend} previousTrend={data.previous_trend} metric={trendMetric} onMetricChange={setTrendMetric} /><AnalyticsInsights insights={data.insights} onOpenAnchor={onOpenAnchor} /></div>
+        <div className="analytics-main-grid"><AnalyticsTrend trend={data.trend} previousTrend={data.previous_trend} currentStartDate={data.query.start_date} currentEndDate={data.query.end_date} previousStartDate={data.previous_start} previousEndDate={data.previous_end} metric={trendMetric} onMetricChange={setTrendMetric} /><AnalyticsInsights insights={data.insights} onOpenAnchor={onOpenAnchor} /></div>
         <section className="analytics-anchor-section"><div className="analytics-section-heading"><div><h2>主播表现</h2><p>点击主播进入详情；环比重点只展示流水，表格默认按流水降序。</p></div><span>{arrayOrEmpty(data.anchors).length} 位</span></div><AnchorComparisonTable anchors={data.anchors} onOpenAnchor={onOpenAnchor} /></section>
       </>}
     </>}
